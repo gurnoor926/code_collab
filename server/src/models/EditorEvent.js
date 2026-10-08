@@ -29,4 +29,4 @@ const editorEventSchema = new mongoose.Schema({
 {
 timestamps: true,
 });
-module.exports = mongoose.model("EditorEvent", editorEventSchema);
+module.exports = mongoose.model("EditorEvent", editorEventSchema)
