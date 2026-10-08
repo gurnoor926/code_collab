@@ -3,12 +3,6 @@ const bcrypt = require("bcryptjs");
 
 const userSchema = new mongoose.Schema(
     {
-        id: {
-            type: String,
-            required: true,
-            unique: true
-        },
-
         name: {
             type: String,
             required: true,
@@ -35,7 +29,8 @@ const userSchema = new mongoose.Schema(
         },
 
         avatar: {
-            type: String
+            type: String,
+            default:"null"
         }
     },
     {
