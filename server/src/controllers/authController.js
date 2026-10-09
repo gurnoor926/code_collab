@@ -1,5 +1,11 @@
 const User = require("../models/User");
 const tokenGenerator = require("../utils/generateToken");
+
+const isPasswordWithinBcryptLimit = (password) => {
+    return Buffer.byteLength(password , 'utf8') <= 72;
+};
+
+
 const registerUser = async (req,res)=>{
     try{
         const {name,email,password} = req.body;
@@ -10,8 +16,10 @@ const registerUser = async (req,res)=>{
                 success:false,
                 message:"Please fill all the fields"});
          }
+         // normalize email
+        const normalizedEmail = email.trim().toLowerCase();
         // existing user check 
-        const existingUser = await User.findOne({email});
+        const existingUser = await User.findOne({email: normalizedEmail});
         if(existingUser){
             return res.status(400).json({
                 success:false,
@@ -24,8 +32,18 @@ const registerUser = async (req,res)=>{
 
         const newUser = new User({
             name,
-            email
+            email : normalizedEmail,
         });
+         
+        //check if password is within bcrypt limit
+        if(!isPasswordWithinBcryptLimit(password)){
+            return res.status(400).json({
+                success:false,
+                message:"Password is too long. Maximum length is 72 characters"
+            });
+        }
+
+
          // hash password and save user
         await newUser.setPassword(password);
         await newUser.save();
@@ -78,6 +96,14 @@ const loginUser = async (req,res)=>{
             });
         }
 
+        if(!isPasswordWithinBcryptLimit(password)){
+            return res.status(400).json({
+                success:false,
+                message:"Password is too long. Maximum length is 72 characters"
+            });
+        }
+
+        // check password limit
         const isPasswordValid = await user.comparePassword(password);
         if(!isPasswordValid){
             return res.status(400).json({

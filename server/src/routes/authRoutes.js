@@ -6,12 +6,16 @@ const {
  } = require("../controllers/authController");
 
  const protect = require("../middleware/authMiddleware");
+ const validate= require("../middleware/validateMiddleware");
+ const { registerSchema, loginSchema } = require("../schemas/authSchema");
+
+const {authLimiter} = require("../middleware/rateLimitMiddleware");
 
  const router = express.Router();
 
 
-router.post("/register", registerUser);
-router.post("/login", loginUser);
+router.post("/register", authLimiter, validate(registerSchema), registerUser);
+router.post("/login", authLimiter, validate(loginSchema), loginUser);
 router.get("/me",protect, getCurrentUser);
 
 
