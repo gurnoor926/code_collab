@@ -5,7 +5,8 @@ const morgan = require("morgan");
 
 const healthRoutes = require("./routes/healthRoutes");
 const authRoutes = require("./routes/authRoutes");
-const testRoutes = require("./routes/testRoutes")
+const problemRoutes = require("./routes/problemRoutes");
+///const testRoutes = require("./routes/testRoutes")
 
 const {
     notFound,
@@ -32,7 +33,8 @@ app.use(express.urlencoded({ extended: true, limit:"20kb" }));
 // Routes
 app.use("/api/health", healthRoutes);
 app.use("/api/auth", authRoutes);
-app.use("/api/test", testRoutes);
+app.use("/api/problems",problemRoutes);
+//app.use("/api/test", testRoutes);
 
 
 //keep after all routes
