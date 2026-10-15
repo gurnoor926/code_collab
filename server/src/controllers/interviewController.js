@@ -4,62 +4,82 @@ const Problem = require("../models/Problem");
 const isValidObjectId = (id) => /^[a-f\d]{24}$/i.test(id);
 
 //create interview
-const createInterview = async (req,res) =>{
-    try{
+const createInterview = async (req, res) => {
+  try {
+    const {
+      title,
+      description = "",
+      problemIds = [],
+      scheduledAt = null,
+      durationMinutes = 60,
+    } = req.body;
 
-        const {title ,description,problemIds,scheduledAt,durationMinutes, } = req.body;
+    // Validate problemIds
+    if (!Array.isArray(problemIds)) {
+      return res.status(400).json({
+        success: false,
+        message: "problemIds must be an array",
+      });
+    }
 
-        //validate that the selected problems exists and are published
+    // Validate selected problems only when IDs are provided
+    if (problemIds.length > 0) {
+      const uniqueProblemIds = [...new Set(problemIds)];
 
-        if(problemIds.length > 0){
-            const uniqueProblemIds = [...new Set(problemIds)];
+      if (uniqueProblemIds.length !== problemIds.length) {
+        return res.status(400).json({
+          success: false,
+          message: "Duplicate problem IDs are not allowed",
+        });
+      }
 
-            if(uniqueProblemIds.length !== problemIds.length){
-                return res.status(400).json({
-                    success:false,
-                    message:"Duplicate problem IDs are not allowed",
-                });
-            }
+      const publishedProblems = await Problem.countDocuments({
+        _id: { $in: problemIds },
+        isPublished: true,
+      });
 
-            const publishedProblems = await Problem.countDocuments({
-                _id:{$in:problemIds},
-                isPublished:true,
-            });
+      if (publishedProblems !== problemIds.length) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "One or more selected problems do not exist or are unpublished",
+        });
+      }
+    }
 
-            if (publishedProblems !== problemIds.length){
-                return res.status(400).json({
-                    success:false,
-                    message:"One or more selected problems do not exist or are unpublished"
-                });
-            }
+    // Validate scheduled time
+    if (scheduledAt !== null) {
+      const scheduledDate = new Date(scheduledAt);
 
-            if(scheduledAt && new Date(scheduledAt)< new Date()){
-                return res.status(400).json({
-                    success:false,
-                    message:"Scheduled time cannot be in the past"
-                });
-            }
+      if (
+        Number.isNaN(scheduledDate.getTime()) ||
+        scheduledDate < new Date()
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Please provide a valid future scheduled time",
+        });
+      }
+    }
 
-            const interview = await InterviewSession.create({
-                title,
-                description,
-                interviewer : req.user.userId,
-                problems: problemIds,
-                scheduledAt : scheduledAt || null,
-                durationMinutes,
-                status : "scheduled",
-            });
+    // Create interview regardless of whether problems were selected
+    const interview = await InterviewSession.create({
+      title,
+      description,
+      interviewer: req.user.userId,
+      problems: problemIds,
+      scheduledAt,
+      durationMinutes,
+      status: "scheduled",
+    });
 
-            return res.status(201).json({
-                success:true,
-                message: "Interview created successfully",
-                data : interview,
-            });
-        }
-
-    }catch(error){
-
-        if (error.code === 11000) {
+    return res.status(201).json({
+      success: true,
+      message: "Interview created successfully",
+      data: interview,
+    });
+  } catch (error) {
+    if (error.code === 11000) {
       return res.status(409).json({
         success: false,
         message: "Room code collision. Please retry",
@@ -72,8 +92,7 @@ const createInterview = async (req,res) =>{
       success: false,
       message: "Failed to create interview",
     });
-
-    }
+  }
 };
 
 // get interviews
@@ -144,8 +163,8 @@ const getInterviewById = async (req,res)=>{
         }
 
         const interview = await InterviewSession.findById(id)
-            .populate("Interviewer" , "name email avatar")
-            .populate("candidate","name email avatar")
+            .populate("interviewer" , "name email avatar role")
+            .populate("candidate","name email avatar role")
             .populate("problems" ,"title slug difficulty category")
             .select("-__v")
             .lean();
@@ -267,11 +286,10 @@ const joinInterview = async (req,res)=>{
 
 // update interview status
 
-const updateInterviewStatus = async (req,res) => {
+const updateInterviewStatus = async (req,res,action) => {
     try{
 
         const {id} = req.params;
-        const {action} = req.params;
 
         if(!isValidObjectId(id)){
             return res.status(400).json({
