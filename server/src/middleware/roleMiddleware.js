@@ -1,7 +1,5 @@
 const authrizeRoles = (...allowedRoles) =>{
     return (req,res, next) =>{
-       console.log("Authenticated user:", req.user); console.log("User role:", req.user?.role); console.log("Allowed roles:", allowedRoles);
-
         if(!req.user){
             return res.status(401).json({
                 success: false,

@@ -1,7 +1,5 @@
 const axios = require("axios");
 const JUDGE0_API_URL = process.env.JUDGE0_API_URL || "https://ce.judge0.com";
-console.log(JUDGE0_API_URL);
-
 const languageIds = {
     javascript:63,
     python:71,
