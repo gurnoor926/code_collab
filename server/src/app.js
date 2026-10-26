@@ -10,6 +10,7 @@ const interviewRoutes = require("./routes/interviewRoutes");
 const executionRoutes = require("./routes/executionRoutes");
 const submissionRoutes = require("./routes/submissionRoutes");
 const testCaseRoutes = require("./routes/testCaseRoutes");
+const replayRoutes = require("./routes/replayRoutes");
 ///const testRoutes = require("./routes/testRoutes")
 
 const {
@@ -42,6 +43,7 @@ app.use("/api/interviews",interviewRoutes);
 app.use("/api/execution",executionRoutes);
 app.use("/api/submissions", submissionRoutes);
 app.use("/api/test-cases", testCaseRoutes);
+app.use("/api/replays", replayRoutes);
 //app.use("/api/test", testRoutes);
 
 

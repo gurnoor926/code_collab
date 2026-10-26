@@ -256,7 +256,7 @@ const createSnapshot = async ({
  * Mark a replay as completed.
  */
 const completeReplay = async (interviewId) => {
-  ensureValidId(interviweId, "interview ID");
+  ensureValidId(interviewId, "interview ID");
 
   const session = await ReplaySession.findOneAndUpdate(
     {
@@ -265,7 +265,7 @@ const completeReplay = async (interviewId) => {
     },
     {
       $set: {
-        status: " completed",
+        status: "completed",
         endedAt: new Date(),
       },
     },
