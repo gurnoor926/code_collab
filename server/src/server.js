@@ -5,8 +5,10 @@ const {Server} = require("socket.io");
 
 const app = require("./app");
 const connectDB = require("./config/db");
-const initialezeSocket = require("./socket/socketHandler");
 const initializeSocket = require("./socket/socketHandler");
+const {
+  initializeNotificationSocket,
+} = require("./socket/notificationSocket");
 
 const PORT = process.env.PORT || 3000;
 
@@ -26,6 +28,7 @@ const io = new Server(httpServer,{
 
 //Register Socket.io event handlers
 initializeSocket(io);
+initializeNotificationSocket(io);
 
 const startServer = async () => {
     try {

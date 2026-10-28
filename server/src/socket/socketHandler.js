@@ -76,7 +76,13 @@ const initializeSocket = (io) => {
   });
 
   io.on("connection", (socket) => {
-    console.log(`Socket connected: ${socket.id} , user: ${socket.user.userId}`);
+    //console.log(`Socket connected: ${socket.id} , user: ${socket.user.userId}`);
+    // Join the authenticated user's private notification room.
+    const userRoom = `user:${socket.user.userId}`;
+
+    socket.join(userRoom);
+
+    console.log(`User ${socket.user.userId} joined their private room`);
 
     //join interview
     socket.on("interview:join", async (payload = {}, ack) => {

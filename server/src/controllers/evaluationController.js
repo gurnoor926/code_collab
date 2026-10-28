@@ -1,4 +1,5 @@
 const InterviewSession = require("../models/InterviewSession");
+const { notifyUser } = require("../utils/interviewNotifications");
 
 const {
   getOrCreateEvaluation,
@@ -18,9 +19,7 @@ const isParticipantOrAdmin = (interview, user) => {
 // Get the current evaluation.
 const getEvaluation = async (req, res) => {
   try {
-    const interview = await InterviewSession.findById(
-      req.params.interviewId
-    );
+    const interview = await InterviewSession.findById(req.params.interviewId);
 
     if (!interview) {
       return res.status(404).json({
@@ -37,19 +36,15 @@ const getEvaluation = async (req, res) => {
       });
     }
 
-    const result = await getOrCreateEvaluation(
-      req.params.interviewId
-    );
+    const result = await getOrCreateEvaluation(req.params.interviewId);
 
     const { evaluation, coding } = result;
 
     const userId = req.user.userId.toString();
 
-    const isInterviewer =
-      interview.interviewer?.toString() === userId;
+    const isInterviewer = interview.interviewer?.toString() === userId;
 
-    const isCandidate =
-      interview.candidate?.toString() === userId;
+    const isCandidate = interview.candidate?.toString() === userId;
 
     const isAdmin = req.user.role === "admin";
 
@@ -99,8 +94,7 @@ const getEvaluation = async (req, res) => {
 
     return res.status(error.statusCode || 500).json({
       success: false,
-      message:
-        error.message || "Failed to retrieve evaluation",
+      message: error.message || "Failed to retrieve evaluation",
     });
   }
 };
@@ -116,8 +110,7 @@ const submitEvaluation = async (req, res) => {
       });
     }
 
-    const isInterviewer =
-      interview.interviewer?.toString() === req.user.userId;
+    const isInterviewer = interview.interviewer?.toString() === req.user.userId;
 
     if (!isInterviewer && req.user.role !== "admin") {
       return res.status(403).json({
@@ -160,12 +153,7 @@ const submitEvaluation = async (req, res) => {
       }
     }
 
-    const validRecommendations = [
-      "strong_hire",
-      "hire",
-      "hold",
-      "no_hire",
-    ];
+    const validRecommendations = ["strong_hire", "hire", "hold", "no_hire"];
 
     if (!validRecommendations.includes(recommendation)) {
       return res.status(400).json({
@@ -232,6 +220,22 @@ const submitEvaluation = async (req, res) => {
     evaluation.submittedAt = new Date();
 
     await evaluation.save();
+
+    if (evaluation.candidate) {
+      await notifyUser({
+        recipient: evaluation.candidate,
+        sender: req.user.userId,
+        type: "evaluation_published",
+        title: "Interview evaluation published",
+        message: `Your evaluation for "${interview.title}" is now available.`,
+        interviewId: interview._id,
+      }).catch((error) => {
+        console.error(
+          "Failed to create evaluation notification:",
+          error.message,
+        );
+      });
+    }
 
     return res.status(200).json({
       success: true,

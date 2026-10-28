@@ -12,6 +12,7 @@ const submissionRoutes = require("./routes/submissionRoutes");
 const testCaseRoutes = require("./routes/testCaseRoutes");
 const replayRoutes = require("./routes/replayRoutes");
 const evaluationRoutes = require("./routes/evaluationRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
 ///const testRoutes = require("./routes/testRoutes")
 
 const {
@@ -46,6 +47,7 @@ app.use("/api/submissions", submissionRoutes);
 app.use("/api/test-cases", testCaseRoutes);
 app.use("/api/replays", replayRoutes);
 app.use("/api/evaluations", evaluationRoutes);
+app.use("/api/notifications", notificationRoutes);
 //app.use("/api/test", testRoutes);
 
 

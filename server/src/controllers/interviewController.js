@@ -1,5 +1,9 @@
 const InterviewSession = require("../models/InterviewSession");
 const Problem = require("../models/Problem");
+const {
+  notifyUser,
+  notifyInterviewParticipants,
+} = require("../utils/interviewNotifications");
 
 const isValidObjectId = (id) => /^[a-f\d]{24}$/i.test(id);
 
@@ -51,10 +55,7 @@ const createInterview = async (req, res) => {
     if (scheduledAt !== null) {
       const scheduledDate = new Date(scheduledAt);
 
-      if (
-        Number.isNaN(scheduledDate.getTime()) ||
-        scheduledDate < new Date()
-      ) {
+      if (Number.isNaN(scheduledDate.getTime()) || scheduledDate < new Date()) {
         return res.status(400).json({
           success: false,
           message: "Please provide a valid future scheduled time",
@@ -97,284 +98,314 @@ const createInterview = async (req, res) => {
 
 // get interviews
 
-const getMyInterviews = async (req,res)=>{
-    try{
-     const page = Math.max(1,Number.parseInt(req.query.page,10)||10);
+const getMyInterviews = async (req, res) => {
+  try {
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 10);
 
-     const limit = Math.min(
+    const limit = Math.min(
       50,
-      Math.max(1, Number.parseInt(req.query.limit, 10) || 10)
+      Math.max(1, Number.parseInt(req.query.limit, 10) || 10),
     );
-    
-     const filter = {
-      $or: [
-        { interviewer: req.user.userId },
-        { candidate: req.user.userId },
-      ],
-    };
-     
-    const [interviews, total] = await Promise.all([
-        InterviewSession.find(filter)
-            .populate("interview" , "name email avatar")
-            .populate("candidate" ,"name email avatar")
-            .select("-__v")
-            .sort({ createdAt:-1})
-            .skip((page -1)* limit)
-            .limit(limit)
-            .lean(),
 
-            InterviewSession.countDocuments(filter),
+    const filter = {
+      $or: [{ interviewer: req.user.userId }, { candidate: req.user.userId }],
+    };
+
+    const [interviews, total] = await Promise.all([
+      InterviewSession.find(filter)
+        .populate("interview", "name email avatar")
+        .populate("candidate", "name email avatar")
+        .select("-__v")
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+
+      InterviewSession.countDocuments(filter),
     ]);
 
     return res.status(200).json({
-        success:true,
-        data:interviews,
-        pagination :{
-            total,
-            page,
-            limit,
-            totalPages : Math.ceil(total/limit),
-        },
+      success: true,
+      data: interviews,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
     });
-
-    }catch(error){
-
-         console.error("Get interviews error:", error);
+  } catch (error) {
+    console.error("Get interviews error:", error);
 
     return res.status(500).json({
       success: false,
       message: "Failed to retrieve interviews",
-
-    });}
+    });
+  }
 };
 
 //get interview by id
 
-const getInterviewById = async (req,res)=>{
-    try{
+const getInterviewById = async (req, res) => {
+  try {
+    const { id } = req.params;
 
-        const {id} = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid interview ID",
+      });
+    }
 
-        if(!isValidObjectId(id)){
-            return res.status(400).json({
-                success:false,
-                message: "Invalid interview ID"
-            });
-        }
+    const interview = await InterviewSession.findById(id)
+      .populate("interviewer", "name email avatar role")
+      .populate("candidate", "name email avatar role")
+      .populate("problems", "title slug difficulty category")
+      .select("-__v")
+      .lean();
 
-        const interview = await InterviewSession.findById(id)
-            .populate("interviewer" , "name email avatar role")
-            .populate("candidate","name email avatar role")
-            .populate("problems" ,"title slug difficulty category")
-            .select("-__v")
-            .lean();
+    if (!interview) {
+      return res.status(404).json({
+        success: false,
+        message: "Interview not found",
+      });
+    }
 
-        if(!interview){
-            return res.status(404).json({
-                success:false,
-                message:"Interview not found",
-            });
-        }
+    const userId = req.user.userId;
 
-        const userId = req.user.userId;
+    const isParticipant =
+      interview.interviewer?._id.toString() === userId ||
+      interview.candidate?._id.toString() === userId;
 
-        const isParticipant = 
-              interview.interviewer?._id.toString()===userId ||
-              interview.candidate?._id.toString()===userId;
+    const isAdmin = req.user.role === "admin";
 
-        const isAdmin = req.user.role === "admin";
+    if (!isParticipant && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "You do not have access to this interview",
+      });
+    }
 
-        if(!isParticipant && !isAdmin){
-            return res.status(403).json({
-                success:false,
-                message:"You do not have access to this interview"
-            });
-        }
-
-        return res.status(200).json({
-            success:true,
-            data:interview,
-        });
-
-    }catch(error){
-
-        console.error("Get interview error:", error);
+    return res.status(200).json({
+      success: true,
+      data: interview,
+    });
+  } catch (error) {
+    console.error("Get interview error:", error);
 
     return res.status(500).json({
       success: false,
       message: "Failed to retrieve interview",
     });
-
-    }
+  }
 };
 
 //join interview
 
-const joinInterview = async (req,res)=>{
-    try{
-        const {roomCode} =req.body;
+const joinInterview = async (req, res) => {
+  try {
+    const { roomCode } = req.body;
 
-        const interview = await InterviewSession.findOne({
-            roomCode : roomCode.toUpperCase(),
-        });
+    const interview = await InterviewSession.findOne({
+      roomCode: roomCode.toUpperCase(),
+    });
 
-        if(!interview){
-            return res.status(404).json({
-                success:false,
-                message:"Invalid room code or Interview not found"
-            });
-        }
+    if (!interview) {
+      return res.status(404).json({
+        success: false,
+        message: "Invalid room code or Interview not found",
+      });
+    }
 
-        if(req.user.role !== "candidate"){
-            return res.status(403).json({
-                success:false,
-                message: "only candidaes can join using an invitation code"
-            });
-        }
+    if (req.user.role !== "candidate") {
+      return res.status(403).json({
+        success: false,
+        message: "only candidaes can join using an invitation code",
+      });
+    }
 
-        if(interview.status === "cancelled" || interview.status === "completed"){
-            return res.status(400).json({
-                success:false,
-                message: "This interview is no longer available"
-            });
-        }
+    if (interview.status === "cancelled" || interview.status === "completed") {
+      return res.status(400).json({
+        success: false,
+        message: "This interview is no longer available",
+      });
+    }
 
-        if(interview.candidate && interview.candidate.toString() !== req.user.userId){
-            return res.status(409).json({
-                success:false,
-                message:"This interview already has a candidate"
-            });
-        }
+    if (
+      interview.candidate &&
+      interview.candidate.toString() !== req.user.userId
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: "This interview already has a candidate",
+      });
+    }
 
-        if(interview.interviewer.toString()=== req.user.userId){
-            return res.status(409).json({
-                success:false,
-                message:"Ypu cannot join your own interview as candidate"
-            });
-        }
+    if (interview.interviewer.toString() === req.user.userId) {
+      return res.status(409).json({
+        success: false,
+        message: "Ypu cannot join your own interview as candidate",
+      });
+    }
 
-        if(!interview.candidate){
-            interview.candidate = req.user.userId;
-            interview.status = "waiting";
+    if (!interview.candidate) {
+      interview.candidate = req.user.userId;
+      interview.status = "waiting";
 
-            await interview.save();
-        }
+      await interview.save();
 
-        return res.status(200).json({
-            success:true,
-            message: "You have joined the interview successfully",
-            data :{
-                interviewId:interview._id,
-                roomCode:interview.roomCode,
-                title:interview.title,
-                status:interview.status,
-            },
-        });
+      await notifyUser({
+        recipient: interview.interviewer,
+        sender: req.user.userId,
+        type: "interview_scheduled",
+        title: "Candidate joined your interview",
+        message: `${req.user.name || "A candidate"} has joined "${interview.title}".`,
+        interviewId: interview._id,
+      }).catch((error) => {
+        console.error("Failed to notify interviewer:", error.message);
+      });
+    }
 
-
-    }catch(error){
-
-         console.error("Join interview error:", error);
+    return res.status(200).json({
+      success: true,
+      message: "You have joined the interview successfully",
+      data: {
+        interviewId: interview._id,
+        roomCode: interview.roomCode,
+        title: interview.title,
+        status: interview.status,
+      },
+    });
+  } catch (error) {
+    console.error("Join interview error:", error);
 
     return res.status(500).json({
       success: false,
       message: "Failed to join interview",
     });
-
-    }
+  }
 };
 
 // update interview status
 
-const updateInterviewStatus = async (req,res,action) => {
-    try{
+const updateInterviewStatus = async (req, res, action) => {
+  try {
+    const { id } = req.params;
 
-        const {id} = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Inavlid interview id",
+      });
+    }
 
-        if(!isValidObjectId(id)){
-            return res.status(400).json({
-                success:false,
-                message:"Inavlid interview id"
-            });
-        }
+    const interview = await InterviewSession.findById(id);
 
-        const interview = await InterviewSession.findById(id);
+    if (!interview) {
+      return res.status(404).json({
+        success: false,
+        message: "Interview not found",
+      });
+    }
 
-        if(!interview){
-            return res.status(404).json({
-                success:false,
-                message:"Interview not found"
-            });
-        }
+    const isInterviewer = interview.interviewer.toString() === req.user.userId;
 
-        const isInterviewer = interview.interviewer.toString() === req.user.userId;
+    const isAdmin = req.user.role === "admin";
 
-        const isAdmin = req.user.role === "admin";
+    if (!isInterviewer && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "Only interviewer or an admin can change interview status",
+      });
+    }
 
-        if(!isInterviewer && !isAdmin){
-            return res.status(403).json({
-                success:false,
-                message:"Only interviewer or an admin can change interview status"
-            });
-        }
-
-        if (action == "start"){
-            if(interview.status !== "waiting"){
-                return res.status.json(400).json({
-                    success:false,
-                    message:"Only waiting interviews can be started"
-                });
-            }
-
-            interview.status = "active";
-            interview.startedAt = new Date();
-        } else if( action === "complete"){
-            if(interview.status !== "active"){
-                return res.status(400).json({
-                    success:false,
-                    message:"Only active interviews can be completed"
-                });
-            }
-            interview.status = "completed";
-            interview.endedAt = new Date();
-        } else if(action === "cancel"){
-            if(!["scheduled" , "waiting"].includes(interview.status)){
-                return res.status(400).json({
-                    success:false,
-                    message:"Only scheduled or witing interviews can be cancelled"
-                });
-            }
-
-            interview.status = "cancelled";
-        }else {
-            return res.status(400).json({
-                success:false,
-                message: "Invalid interview action"
-            })
-        }
-
-        await interview.save();
-
-        return res.status(200).json({
-            success:true,
-            message:`Interview ${action} successful`,
-            data:{
-                id: interview._id,
-                status: interview.status,
-                startedAt:interview.startedAt,
-                endedAt:interview.endedAt,
-            }
+    if (action === "start") {
+      if (interview.status !== "waiting") {
+        return res.status(400).json({
+          success: false,
+          message: "Only waiting interviews can be started",
         });
+      }
 
-    }catch(error){
+      interview.status = "active";
+      interview.startedAt = new Date();
+    } else if (action === "complete") {
+      if (interview.status !== "active") {
+        return res.status(400).json({
+          success: false,
+          message: "Only active interviews can be completed",
+        });
+      }
+      interview.status = "completed";
+      interview.endedAt = new Date();
+    } else if (action === "cancel") {
+      if (!["scheduled", "waiting"].includes(interview.status)) {
+        return res.status(400).json({
+          success: false,
+          message: "Only scheduled or witing interviews can be cancelled",
+        });
+      }
 
-         console.error("Update interview status error:", error);
+      interview.status = "cancelled";
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid interview action",
+      });
+    }
+
+    await interview.save();
+
+    if (action === "start") {
+      await notifyInterviewParticipants({
+        interview,
+        sender: req.user.userId,
+        type: "interview_started",
+        title: "Interview started",
+        message: `"${interview.title}" has started.`,
+      });
+    }
+
+    if (action === "complete") {
+      await notifyInterviewParticipants({
+        interview,
+        sender: req.user.userId,
+        type: "interview_completed",
+        title: "Interview completed",
+        message: `"${interview.title}" has been completed.`,
+        includeInterviewer: false,
+        includeCandidate: true,
+      });
+    }
+
+    if (action === "cancel") {
+      await notifyInterviewParticipants({
+        interview,
+        sender: req.user.userId,
+        type: "interview_cancelled",
+        title: "Interview cancelled",
+        message: `"${interview.title}" has been cancelled.`,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Interview ${action} successful`,
+      data: {
+        id: interview._id,
+        status: interview.status,
+        startedAt: interview.startedAt,
+        endedAt: interview.endedAt,
+      },
+    });
+  } catch (error) {
+    console.error("Update interview status error:", error);
 
     return res.status(500).json({
       success: false,
       message: "Failed to update interview status",
     });
-    }
+  }
 };
 
 module.exports = {
