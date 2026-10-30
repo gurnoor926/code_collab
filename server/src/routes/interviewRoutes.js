@@ -42,15 +42,15 @@ router.post(
 );
 
 // Start an interview
-router.patch("/:id/start", protect, (req, res) =>
+router.patch("/:id/start",(req, res) =>
     updateInterviewStatus(req, res, "start")
 );
 
-router.patch("/:id/complete", protect, (req, res) =>
+router.patch("/:id/complete", (req, res) =>
     updateInterviewStatus(req, res, "complete")
 );
 
-router.patch("/:id/cancel", protect, (req, res) =>
+router.patch("/:id/cancel", (req, res) =>
     updateInterviewStatus(req, res, "cancel")
 );
 

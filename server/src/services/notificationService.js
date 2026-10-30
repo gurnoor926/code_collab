@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 const Notification = require("../models/Notification");
-const { emitNotification } = require("../socket/notificationSocket");
+const { emitNotifications } = require("../socket/notificationSocket");
 
 const createNotification = async ({
   recipient,
@@ -38,7 +38,7 @@ const createNotification = async ({
     .populate("relatedInterview", "title status scheduledAt")
     .lean();
 
-  emitNotification(recipient, populatedNotification);
+  emitNotifications(recipient, populatedNotification);
 
   return populatedNotification;
 };

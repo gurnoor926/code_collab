@@ -100,7 +100,7 @@ const createInterview = async (req, res) => {
 
 const getMyInterviews = async (req, res) => {
   try {
-    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 10);
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
 
     const limit = Math.min(
       50,
@@ -113,7 +113,7 @@ const getMyInterviews = async (req, res) => {
 
     const [interviews, total] = await Promise.all([
       InterviewSession.find(filter)
-        .populate("interview", "name email avatar")
+        .populate("interviewer", "name email avatar")
         .populate("candidate", "name email avatar")
         .select("-__v")
         .sort({ createdAt: -1 })
