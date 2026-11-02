@@ -1,5 +1,7 @@
 const InterviewSession = require("../models/InterviewSession");
 const { notifyUser } = require("../utils/interviewNotifications");
+const InterviewEvaluation = require("../models/InterviewEvaluation");
+const mongoose = require("mongoose");
 
 const {
   getOrCreateEvaluation,
@@ -19,6 +21,13 @@ const isParticipantOrAdmin = (interview, user) => {
 // Get the current evaluation.
 const getEvaluation = async (req, res) => {
   try {
+    if (!mongoose.isValidObjectId(req.params.interviewId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid interview ID",
+      });
+    }
+
     const interview = await InterviewSession.findById(req.params.interviewId);
 
     if (!interview) {
@@ -36,10 +45,6 @@ const getEvaluation = async (req, res) => {
       });
     }
 
-    const result = await getOrCreateEvaluation(req.params.interviewId);
-
-    const { evaluation, coding } = result;
-
     const userId = req.user.userId.toString();
 
     const isInterviewer = interview.interviewer?.toString() === userId;
@@ -48,6 +53,23 @@ const getEvaluation = async (req, res) => {
 
     const isAdmin = req.user.role === "admin";
 
+    // Candidates must not create or access draft evaluations.
+    if (isCandidate && !isInterviewer && !isAdmin) {
+      const existingEvaluation = await InterviewEvaluation.findOne({
+        interview: interview._id,
+      });
+
+      if (!existingEvaluation || existingEvaluation.status !== "submitted") {
+        return res.status(403).json({
+          success: false,
+          message: "Evaluation is not yet available",
+        });
+      }
+    }
+
+    const result = await getOrCreateEvaluation(req.params.interviewId);
+
+    const { evaluation, coding } = result;
     // Candidates cannot view draft evaluations.
     if (
       isCandidate &&
@@ -101,6 +123,12 @@ const getEvaluation = async (req, res) => {
 // Submit interviewer ratings and feedback.
 const submitEvaluation = async (req, res) => {
   try {
+    if (!mongoose.isValidObjectId(req.params.interviewId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid interview ID",
+      });
+    }
     const interview = await InterviewSession.findById(req.params.interviewId);
 
     if (!interview) {

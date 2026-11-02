@@ -10,7 +10,7 @@ const MAX_CODE_SIZE = 50_000;
 
 const ensureValidId = (id, label = "ID") => {
   if (!mongoose.isValidObjectId(id)) {
-    const error = new Error(`Inavlid ${label}`);
+    const error = new Error(`Invalid ${label}`);
     error.statusCode = 404;
     throw error;
   }
@@ -45,9 +45,13 @@ const startReplay = async ({
   const initialCodeSize = Buffer.byteLength(initialCode, "utf8");
 
   if (initialCodeSize > MAX_CODE_SIZE) {
-    throw new Error(
-      `Initial code exceeds the maximum size of ${MAX_CODE_SIZE} bytes`,
-    );
+   const error = new Error(
+    `Initial code exceeds the maximum size of ${MAX_CODE_SIZE} bytes`
+  );
+
+  error.statusCode = 413;
+
+  throw error;
   }
 
   if (!LANGUAGE_ALLOWLIST.has(initialLanguage)) {
@@ -241,6 +245,24 @@ const createSnapshot = async ({
   code,
   language,
 }) => {
+  if (typeof code !== "string") {
+    const error = new Error("Code must be a string");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (Buffer.byteLength(code, "utf8") > MAX_CODE_SIZE) {
+    const error = new Error("Code exceeds the maximum allowed size");
+    error.statusCode = 413;
+    throw error;
+  }
+
+  if (!LANGUAGE_ALLOWLIST.has(language)) {
+    const error = new Error("Unsupported language");
+    error.statusCode = 400;
+    throw error;
+  }
+
   return recordReplayEvent({
     interviewId,
     userId,

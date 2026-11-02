@@ -12,15 +12,21 @@ const createNotification = async ({
   metadata = {},
 }) => {
   if (!mongoose.isValidObjectId(recipient)) {
-    throw new Error("A valid recipient ID is required");
+    const error = new Error("A valid Recipient ID is required");
+    error.statusCode = 400;
+    throw error;
   }
 
   if (sender && !mongoose.isValidObjectId(sender)) {
-    throw new Error("Invalid sender ID");
+    const error = new Error("A valid Sender ID is required");
+    error.statusCode = 400;
+    throw error;
   }
 
   if (relatedInterview && !mongoose.isValidObjectId(relatedInterview)) {
-    throw new Error("Invalid interview ID");
+    const error = new Error("Invalid notification ID");
+    error.statusCode = 400;
+    throw error;
   }
 
   const notification = await Notification.create({
@@ -48,8 +54,10 @@ const getUserNotifications = async (
   { page = 1, limit = 20, unreadOnly = false } = {},
 ) => {
   if (!mongoose.isValidObjectId(userId)) {
-    throw new Error("A valid user ID is required");
-  }
+  const error = new Error("A valid user ID is required");
+  error.statusCode = 400;
+  throw error;
+}
 
   page = Math.max(1, Number.parseInt(page, 10) || 1);
   limit = Math.min(50, Math.max(1, Number.parseInt(limit, 10) || 20));
@@ -85,9 +93,12 @@ const getUserNotifications = async (
 };
 
 const getUnreadNotificationCount = async (userId) => {
+
   if (!mongoose.isValidObjectId(userId)) {
-    throw new Error("A valid user ID is required");
-  }
+  const error = new Error("A valid user ID is required");
+  error.statusCode = 400;
+  throw error;
+}
 
   return Notification.countDocuments({
     recipient: userId,
@@ -97,11 +108,14 @@ const getUnreadNotificationCount = async (userId) => {
 
 const markNotificationAsRead = async (notificationId, userId) => {
   if (!mongoose.isValidObjectId(notificationId)) {
-    throw new Error("Invalid notification ID");
+    const error = new Error("Invalid notification ID");
+    error.statusCode = 400;
+    throw error;
   }
-
   if (!mongoose.isValidObjectId(userId)) {
-    throw new Error("A valid user ID is required");
+    const error = new Error("A valid user ID is required");
+    error.statusCode = 400;
+    throw error;
   }
 
   return Notification.findOneAndUpdate(
@@ -125,7 +139,9 @@ const markNotificationAsRead = async (notificationId, userId) => {
 
 const markAllNotificationsAsRead = async (userId) => {
   if (!mongoose.isValidObjectId(userId)) {
-    throw new Error("A valid user ID is required");
+    const error = new Error("A valid user ID is required");
+    error.statusCode = 400;
+    throw error;
   }
 
   const result = await Notification.updateMany(
@@ -148,11 +164,15 @@ const markAllNotificationsAsRead = async (userId) => {
 
 const deleteNotification = async (notificationId, userId) => {
   if (!mongoose.isValidObjectId(notificationId)) {
-    throw new Error("Invalid notification ID");
+    const error = new Error("Invalid notification ID");
+    error.statusCode = 400;
+    throw error;
   }
 
   if (!mongoose.isValidObjectId(userId)) {
-    throw new Error("A valid user ID is required");
+    const error = new Error("A valid user ID is required");
+    error.statusCode = 400;
+    throw error;
   }
 
   return Notification.findOneAndDelete({

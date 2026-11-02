@@ -32,10 +32,10 @@ app.use(cors());
 app.use(morgan("dev"));
 
 // Parse JSON
-app.use(express.json({limit: "20kb"}));
+app.use(express.json({limit: "100kb"}));
 
 // Parse URL encoded data
-app.use(express.urlencoded({ extended: true, limit:"20kb" }));
+app.use(express.urlencoded({ extended: true, limit:"100kb" }));
 
 // Routes
 app.use("/api/health", healthRoutes);
