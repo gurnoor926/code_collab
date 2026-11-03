@@ -38,7 +38,9 @@ const initializeSocket = (io) => {
         return next(new Error("Socket authentication is not configured"));
       }
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwt.verify(token, process.env.JWT_SECRET,{
+        algorithms: ["HS256"],
+      });
 
       if (!decoded.userId) {
         return next(new Error("Invalid authentication token"));
