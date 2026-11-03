@@ -14,10 +14,18 @@ const PORT = process.env.PORT || 3000;
 
 const httpServer = http.createServer(app);
 
+const allowedOrigins = (
+    process.env.CLIENT_URL || "http://localhost:5173"
+)
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
 const io = new Server(httpServer,{
     cors:{
-        origin: process.env.CLIENT_URL || "http://localhost:5173",
-        methods:["GET","POST"],
+        origin: allowedOrigins,
+    methods: ["GET", "POST"],
+    credentials: true
     },
 
     maxHttpBufferSize: 100_000,

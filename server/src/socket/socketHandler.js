@@ -12,10 +12,6 @@ const getRoomName = (interviewId) => {
   return `${ROOM_PREFIX}${interviewId}`;
 };
 
-const isvalidObjectId = (id) => {
-  return typeof id === "string" && /^[a-f\d]{24}$/i.test(id);
-};
-
 const sendError = (ack, message) => {
   if (typeof ack === "function") {
     ack({
@@ -37,6 +33,10 @@ const initializeSocket = (io) => {
 
       //also accept token prefixed with "Bearer "
       token = token.replace(/^Bearer\s+/i, "").trim();
+
+      if (!process.env.JWT_SECRET) {
+        return next(new Error("Socket authentication is not configured"));
+      }
 
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 

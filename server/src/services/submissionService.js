@@ -47,18 +47,22 @@ const executeAndWait = async ({ language, code, stdin }) => {
 
     const statusId = result?.status?.id;
 
+    if (!Number.isInteger(statusId)) {
+      throw new Error("Judge0 returned an invalid execution status");
+    }
+
     if (TERMINAL_STATUS_IDS.has(statusId)) {
       return result;
     }
 
     if (statusId !== 1 && statusId !== 2) {
       throw new Error(
-        `unexpected judge0 status: ${result?.status?.description || statusId}`,
+        `Unexpected Judge0 status: ${result?.status?.description || statusId}`,
       );
     }
   }
 
-  throw new Error("judge0 execution timed out");
+  throw new Error("Judge0 execution timed out");
 };
 
 // run against test cases
@@ -79,7 +83,10 @@ const evaluateTestCases = async ({ language, code, testCases }) => {
       results.push({
         testCaseId: testCase._id,
         passed: false,
-        status: execution.status.description,
+        status:
+          statusId === 8
+            ? "Memory Limit Exceeded"
+            : execution.status.description,
         executionTime: Number(execution.time) || 0,
         memoryUsed: Number(execution.memory) || 0,
         error:
@@ -144,7 +151,7 @@ const runExamples = async ({ userId, problemId, language, code }) => {
   }).sort({ order: 1 });
 
   if (testCases.length === 0) {
-    const error = new Error("No public test cases are avilable");
+    const error = new Error("No public test cases are available");
     error.statusCode = 400;
     throw error;
   }
@@ -249,6 +256,8 @@ const submitSolution = async ({
         status = "Compilation Error";
       } else if (firstStatus === "Time Limit Exceeded") {
         status = "Time Limit Exceeded";
+      } else if (firstStatus === "Memory Limit Exceeded") {
+        status = "Memory Limit Exceeded";
       } else if (firstStatus?.startsWith("Runtime Error")) {
         status = "Runtime Error";
       } else if (firstStatus === "Internal Error") {

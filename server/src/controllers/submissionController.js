@@ -208,7 +208,7 @@ const getSubmissionById = async (req, res) => {
             _id: id,
             user: req.user.userId,
         })
-            .select("-__v")
+            .select("-__v -errorMessage")
             .populate("problem", "title slug difficulty")
             .lean();
 

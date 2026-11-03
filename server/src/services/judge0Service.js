@@ -1,69 +1,109 @@
 const axios = require("axios");
-const JUDGE0_API_URL = process.env.JUDGE0_API_URL || "https://ce.judge0.com";
+
+const JUDGE0_API_URL = process.env.JUDGE0_API_URL;
+
+if (!JUDGE0_API_URL) {
+    throw new Error("JUDGE0_API_URL is not configured");
+}
+
 const languageIds = {
-    javascript:63,
-    python:71,
-    cpp:54,
-    java:62,
+    javascript: 63,
+    python: 71,
+    cpp: 54,
+    java: 62,
 };
 
 const judge0Client = axios.create({
     baseURL: JUDGE0_API_URL,
-    timeout:15000,
-    headers:{
-        "Content-Type":"application/json",
+    timeout: 15000,
+    headers: {
+        "Content-Type": "application/json",
     },
 });
 
-const submitCode = async ({ language , code , stdin = ""}) =>{
+const handleJudge0Error = (error) => {
+    if (error.response) {
+        const judge0Error = new Error(
+            `Judge0 API returned status ${error.response.status}`
+        );
+
+        judge0Error.statusCode = error.response.status;
+        judge0Error.originalError = error;
+
+        throw judge0Error;
+    }
+
+    if (error.code === "ECONNABORTED") {
+        const timeoutError = new Error("Judge0 request timed out");
+        timeoutError.code = "JUDGE0_TIMEOUT";
+        throw timeoutError;
+    }
+
+    const networkError = new Error("Unable to connect to Judge0");
+    networkError.code = "JUDGE0_NETWORK_ERROR";
+
+    throw networkError;
+};
+
+const submitCode = async ({ language, code, stdin = "" }) => {
     const languageId = languageIds[language];
 
-    if(!languageId){
+    if (!languageId) {
         throw new Error("Unsupported programming language");
     }
 
-    const response = await judge0Client.post(
-        "/submissions",
-        {
-            language_id:languageId,
-            source_code:code,
-            stdin,
-        },
-        {
-            params:{
-                base64_encoded:"false",
-                wait:"false",
+    try {
+        const response = await judge0Client.post(
+            "/submissions",
+            {
+                language_id: languageId,
+                source_code: code,
+                stdin,
             },
-        },
-    );
+            {
+                params: {
+                    base64_encoded: "false",
+                    wait: "false",
+                },
+            }
+        );
 
-    return response.data;
+        return response.data;
+
+    } catch (error) {
+        handleJudge0Error(error);
+    }
 };
 
-const getSubmissionResult = async (token) =>{
-    const response = await judge0Client.get(
-        `/submissions/${encodeURIComponent(token)}`,
-        {
-            params:{
-                base64_encoded:"false",
-                fields:[
-                    "token",
-                    "stdout",
-                    "stderr",
-                    "compile_output",
-                    "message",
-                    "status",
-                    "time",
-                    "memory",
-                ].join(","),
-            },
-        }
-    );
+const getSubmissionResult = async (token) => {
+    try {
+        const response = await judge0Client.get(
+            `/submissions/${encodeURIComponent(token)}`,
+            {
+                params: {
+                    base64_encoded: "false",
+                    fields: [
+                        "token",
+                        "stdout",
+                        "stderr",
+                        "compile_output",
+                        "message",
+                        "status",
+                        "time",
+                        "memory",
+                    ].join(","),
+                },
+            }
+        );
 
-    return response.data;
+        return response.data;
+
+    } catch (error) {
+        handleJudge0Error(error);
+    }
 };
 
-module.exports ={
+module.exports = {
     submitCode,
     getSubmissionResult,
 };
