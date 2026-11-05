@@ -7,6 +7,7 @@ const api = axios.create({
     },
     timeout: 30000, // Set a timeout of 30 seconds
 });
+//attach the JWT token to the protected requests
 
 api.interceptors.request.use(
     (config) => {
@@ -21,15 +22,4 @@ api.interceptors.request.use(
 
     (error) => Promise.reject(error)
 );
-
-api.interceptors.response.use(
-    (response) => response,
-    (error) => {
-        if(error.response?.status === 401) {
-            localStorage.removeItem("token");
-        }
-        return Promise.reject(error);
-    }
-);
-
 export default api;
