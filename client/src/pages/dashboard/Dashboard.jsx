@@ -1,25 +1,31 @@
+
 import { useAuth } from "../../hooks/useAuth";
+import CandidateDashboard from "./CandidateDashboard";
+import InterviewerDashboard from "./InterviewerDashboard";
+import AppLayout from "../../components/layout/AppLayout";
 
 function Dashboard() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
+
+  if (user?.role === "candidate") {
+    return <CandidateDashboard />;
+  }
+
+  if (user?.role === "interviewer") {
+    return <InterviewerDashboard />;
+  }
 
   return (
-    <div className="min-h-screen bg-background p-8 text-text-primary">
-      <h1 className="text-3xl font-bold">
-        Welcome, {user?.name}
-      </h1>
-
-      <p className="mt-2 text-text-secondary">
-        Role: {user?.role}
-      </p>
-
-      <button
-        onClick={logout}
-        className="mt-6 rounded-lg bg-primary px-5 py-2 text-white hover:bg-primary-dark"
-      >
-        Logout
-      </button>
-    </div>
+    <AppLayout>
+      <div className="rounded-xl border border-white/10 bg-[#18181f] p-8 text-center">
+        <h1 className="text-xl font-semibold text-white">
+          Admin Dashboard
+        </h1>
+        <p className="mt-2 text-sm text-zinc-400">
+          Administrative controls will be implemented in a later phase.
+        </p>
+      </div>
+    </AppLayout>
   );
 }
 
