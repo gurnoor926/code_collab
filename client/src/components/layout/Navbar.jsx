@@ -1,9 +1,9 @@
 
 import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
+import NotificationBell from "../notifications/NotificationBell";
 import {
   Code2,
-  Bell,
   ChevronDown,
   LayoutDashboard,
   LogOut,
@@ -89,17 +89,7 @@ function Navbar() {
         <div className="flex items-center gap-3">
 
           {/* Notifications */}
-          <button
-            type="button"
-            onClick={() =>
-              toast("Notifications will be available in a later phase.")
-            }
-            aria-label="Notifications"
-            className="relative flex h-10 w-10 items-center justify-center rounded-xl text-zinc-400 transition hover:bg-white/5 hover:text-white"
-          >
-            <Bell size={19} />
-            <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-indigo-400 ring-2 ring-[#09090f]" />
-          </button>
+         <NotificationBell />
 
           {/* Profile Dropdown */}
           <div className="relative">
