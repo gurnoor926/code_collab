@@ -2,7 +2,11 @@ import api from "./api";
 
 const authService ={
     register: async (userData) =>{
-        const response = await api.post("/auth/register", userData);
+        const response = await api.post("/auth/register", userData,{
+            headers: {
+                "Content-Type": "multipart/form-data"
+            },
+        });
        
         return response.data;
     },

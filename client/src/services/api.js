@@ -1,25 +1,29 @@
+
 import axios from "axios";
 
 const api = axios.create({
-    baseURL: import.meta.env.VITE_API_URL,
-    headers:{
-        "Content-Type": "application/json",
-    },
-    timeout: 30000, // Set a timeout of 30 seconds
+  baseURL: import.meta.env.VITE_API_URL,
+  timeout: 30000,
 });
-//attach the JWT token to the protected requests
 
 api.interceptors.request.use(
-    (config) => {
-        const token = localStorage.getItem("token");
+  (config) => {
+    const token = localStorage.getItem("token");
 
-        if(token) {
-            config.headers["Authorization"] = `Bearer ${token}`;
-        }
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
 
-        return config;
-    },
+    // Let the browser/Axios set the multipart boundary.
+    if (config.data instanceof FormData) {
+      delete config.headers["Content-Type"];
+    } else {
+      config.headers["Content-Type"] = "application/json";
+    }
 
-    (error) => Promise.reject(error)
+    return config;
+  },
+  (error) => Promise.reject(error)
 );
+
 export default api;
