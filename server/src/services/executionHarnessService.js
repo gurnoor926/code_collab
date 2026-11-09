@@ -48,9 +48,7 @@ const validateArgumentsConfig = (argumentsConfig) => {
     }
 
     if (names.has(argument.name)) {
-      throw new Error(
-        `Duplicate argument name: ${argument.name}`
-      );
+      throw new Error(`Duplicate argument name: ${argument.name}`);
     }
 
     names.add(argument.name);
@@ -65,7 +63,6 @@ const buildJavaScriptHarness = ({
   code,
   functionName,
   argumentsConfig,
-  returnType,
 }) => {
   const argumentNames = JSON.stringify(
     argumentsConfig.map((argument) => argument.name)
@@ -83,7 +80,6 @@ let __args;
 
 if (Array.isArray(__input)) {
   __args = __input;
-
 } else if (
   __input !== null &&
   typeof __input === "object"
@@ -95,7 +91,6 @@ if (Array.isArray(__input)) {
 
     return __input[name];
   });
-
 } else {
   throw new Error("Input must be a JSON object or array");
 }
@@ -104,9 +99,7 @@ const __result = ${functionName}(...__args);
 const __serialized = JSON.stringify(__result);
 
 process.stdout.write(
-  typeof __serialized === "undefined"
-    ? "null"
-    : __serialized
+  typeof __serialized === "undefined" ? "null" : __serialized
 );
 `;
 };
@@ -161,8 +154,7 @@ __stdout.write(
 };
 
 // ======================================================
-// C++ HARNESS
-// C++14 compatible - no external JSON libraries
+// C++ HARNESS - C++14 COMPATIBLE
 // ======================================================
 
 const buildCppHarness = ({
@@ -283,7 +275,7 @@ using namespace std;
 ${code}
 
 // ======================================================
-// JSON VALUE STRUCTURE
+// JSON VALUE
 // ======================================================
 
 struct Json {
@@ -326,12 +318,7 @@ private:
 
     char peek() {
         whitespace();
-
-        if (pos >= s.size()) {
-            return '\0';
-        }
-
-        return s[pos];
+        return pos < s.size() ? s[pos] : '\0';
     }
 
     string parseString() {
@@ -358,37 +345,14 @@ private:
                 char e = s[pos++];
 
                 switch (e) {
-                    case '"':
-                        result += '"';
-                        break;
-
-                    case '\\':
-                        result += '\\';
-                        break;
-
-                    case '/':
-                        result += '/';
-                        break;
-
-                    case 'b':
-                        result += '\b';
-                        break;
-
-                    case 'f':
-                        result += '\f';
-                        break;
-
-                    case 'n':
-                        result += '\n';
-                        break;
-
-                    case 'r':
-                        result += '\r';
-                        break;
-
-                    case 't':
-                        result += '\t';
-                        break;
+                    case '"': result += '"'; break;
+                    case '\\': result += '\\'; break;
+                    case '/': result += '/'; break;
+                    case 'b': result += '\b'; break;
+                    case 'f': result += '\f'; break;
+                    case 'n': result += '\n'; break;
+                    case 'r': result += '\r'; break;
+                    case 't': result += '\t'; break;
 
                     case 'u': {
                         if (pos + 4 > s.size()) {
@@ -399,7 +363,6 @@ private:
 
                         for (int i = 0; i < 4; i++) {
                             char h = s[pos++];
-
                             value <<= 4;
 
                             if (h >= '0' && h <= '9') {
@@ -409,34 +372,19 @@ private:
                             } else if (h >= 'A' && h <= 'F') {
                                 value += h - 'A' + 10;
                             } else {
-                                throw runtime_error(
-                                    "Invalid unicode escape"
-                                );
+                                throw runtime_error("Invalid unicode escape");
                             }
                         }
 
                         if (value <= 0x7F) {
                             result += static_cast<char>(value);
                         } else if (value <= 0x7FF) {
-                            result += static_cast<char>(
-                                0xC0 | (value >> 6)
-                            );
-
-                            result += static_cast<char>(
-                                0x80 | (value & 0x3F)
-                            );
+                            result += static_cast<char>(0xC0 | (value >> 6));
+                            result += static_cast<char>(0x80 | (value & 0x3F));
                         } else {
-                            result += static_cast<char>(
-                                0xE0 | (value >> 12)
-                            );
-
-                            result += static_cast<char>(
-                                0x80 | ((value >> 6) & 0x3F)
-                            );
-
-                            result += static_cast<char>(
-                                0x80 | (value & 0x3F)
-                            );
+                            result += static_cast<char>(0xE0 | (value >> 12));
+                            result += static_cast<char>(0x80 | ((value >> 6) & 0x3F));
+                            result += static_cast<char>(0x80 | (value & 0x3F));
                         }
 
                         break;
@@ -447,9 +395,7 @@ private:
                 }
             } else {
                 if (static_cast<unsigned char>(c) < 0x20) {
-                    throw runtime_error(
-                        "Invalid control character"
-                    );
+                    throw runtime_error("Invalid control character");
                 }
 
                 result += c;
@@ -463,13 +409,11 @@ private:
         whitespace();
 
         char c = peek();
-
         Json result;
 
         // Object
         if (c == '{') {
             result.type = Json::OBJECT;
-
             pos++;
 
             if (peek() == '}') {
@@ -502,9 +446,7 @@ private:
 
                 char separator = s[pos++];
 
-                if (separator == '}') {
-                    break;
-                }
+                if (separator == '}') break;
 
                 if (separator != ',') {
                     throw runtime_error("Expected comma");
@@ -517,7 +459,6 @@ private:
         // Array
         if (c == '[') {
             result.type = Json::ARRAY;
-
             pos++;
 
             if (peek() == ']') {
@@ -536,9 +477,7 @@ private:
 
                 char separator = s[pos++];
 
-                if (separator == ']') {
-                    break;
-                }
+                if (separator == ']') break;
 
                 if (separator != ',') {
                     throw runtime_error("Expected comma");
@@ -552,45 +491,28 @@ private:
         if (c == '"') {
             result.type = Json::STRING;
             result.text = parseString();
-
             return result;
         }
 
-        // Boolean true
-        if (
-            c == 't' &&
-            s.compare(pos, 4, "true") == 0
-        ) {
+        // Boolean
+        if (c == 't' && s.compare(pos, 4, "true") == 0) {
             result.type = Json::BOOLEAN;
             result.boolean = true;
-
             pos += 4;
-
             return result;
         }
 
-        // Boolean false
-        if (
-            c == 'f' &&
-            s.compare(pos, 5, "false") == 0
-        ) {
+        if (c == 'f' && s.compare(pos, 5, "false") == 0) {
             result.type = Json::BOOLEAN;
             result.boolean = false;
-
             pos += 5;
-
             return result;
         }
 
         // Null
-        if (
-            c == 'n' &&
-            s.compare(pos, 4, "null") == 0
-        ) {
+        if (c == 'n' && s.compare(pos, 4, "null") == 0) {
             result.type = Json::NIL;
-
             pos += 4;
-
             return result;
         }
 
@@ -598,9 +520,7 @@ private:
         if (c == '-' || isdigit(static_cast<unsigned char>(c))) {
             size_t start = pos;
 
-            if (s[pos] == '-') {
-                pos++;
-            }
+            if (s[pos] == '-') pos++;
 
             while (
                 pos < s.size() &&
@@ -679,7 +599,7 @@ public:
 };
 
 // ======================================================
-// GET ARGUMENT FROM JSON
+// GET ARGUMENT
 // ======================================================
 
 const Json& getArgument(
@@ -706,14 +626,11 @@ const Json& getArgument(
         return it->second;
     }
 
-    throw runtime_error(
-        "Input must be a JSON object or array"
-    );
+    throw runtime_error("Input must be a JSON object or array");
 }
 
 // ======================================================
-// TYPE CONVERSION
-// C++14 compatible overloads
+// TYPE CONVERSION - C++14
 // ======================================================
 
 int convert(const Json& value) {
@@ -838,7 +755,7 @@ vector<vector<string>> convertStringMatrix(const Json& value) {
 }
 
 // ======================================================
-// JSON SERIALIZATION
+// JSON SERIALIZATION - C++14 COMPATIBLE
 // ======================================================
 
 string escapeString(const string& value) {
@@ -846,33 +763,13 @@ string escapeString(const string& value) {
 
     for (char c : value) {
         switch (c) {
-            case '"':
-                result += "\\\"";
-                break;
-
-            case '\\':
-                result += "\\\\";
-                break;
-
-            case '\b':
-                result += "\\b";
-                break;
-
-            case '\f':
-                result += "\\f";
-                break;
-
-            case '\n':
-                result += "\\n";
-                break;
-
-            case '\r':
-                result += "\\r";
-                break;
-
-            case '\t':
-                result += "\\t";
-                break;
+            case '"': result += "\\\""; break;
+            case '\\': result += "\\\\"; break;
+            case '\b': result += "\\b"; break;
+            case '\f': result += "\\f"; break;
+            case '\n': result += "\\n"; break;
+            case '\r': result += "\\r"; break;
+            case '\t': result += "\\t"; break;
 
             default:
                 if (static_cast<unsigned char>(c) < 0x20) {
@@ -888,7 +785,6 @@ string escapeString(const string& value) {
     }
 
     result += "\"";
-
     return result;
 }
 
@@ -904,31 +800,34 @@ string serialize(bool value) {
     return value ? "true" : "false";
 }
 
-string serialize(double value) {
+// Integer serialization
+template <typename T>
+typename enable_if<
+    is_integral<T>::value &&
+    !is_same<T, bool>::value,
+    string
+>::type serialize(T value) {
+    return to_string(value);
+}
+
+// Floating-point serialization
+template <typename T>
+typename enable_if<
+    is_floating_point<T>::value,
+    string
+>::type serialize(T value) {
     if (!isfinite(value)) {
         throw runtime_error("Cannot serialize non-finite number");
     }
 
     ostringstream output;
-
     output << setprecision(15) << value;
 
     return output.str();
 }
 
-string serialize(float value) {
-    if (!isfinite(value)) {
-        throw runtime_error("Cannot serialize non-finite number");
-    }
-
-    ostringstream output;
-
-    output << setprecision(7) << value;
-
-    return output.str();
-}
-
-template<typename T>
+// Vector serialization
+template <typename T>
 string serialize(const vector<T>& values) {
     string result = "[";
 
@@ -945,6 +844,7 @@ string serialize(const vector<T>& values) {
     return result;
 }
 
+// Boolean vector serialization
 string serialize(const vector<bool>& values) {
     string result = "[";
 
@@ -961,17 +861,8 @@ string serialize(const vector<bool>& values) {
     return result;
 }
 
-template<typename T>
-string serialize(const T& value) {
-    ostringstream output;
-
-    output << value;
-
-    return output.str();
-}
-
 // ======================================================
-// MAIN
+// MAIN EXECUTION
 // ======================================================
 
 int main() {
@@ -982,7 +873,6 @@ int main() {
         );
 
         JsonParser parser(input);
-
         Json __root = parser.parse();
 
         ${declarations}
@@ -1022,9 +912,7 @@ const buildExecutionCode = ({
     !executionConfig ||
     executionConfig.mode !== "function"
   ) {
-    throw new Error(
-      "Function execution configuration is missing"
-    );
+    throw new Error("Function execution configuration is missing");
   }
 
   const functionName = validateFunctionName(
@@ -1042,7 +930,6 @@ const buildExecutionCode = ({
         code,
         functionName,
         argumentsConfig,
-        returnType: executionConfig.returnType,
       });
 
     case "python":
