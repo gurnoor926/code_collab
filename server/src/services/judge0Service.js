@@ -49,62 +49,71 @@ const handleJudge0Error = (error) => {
 };
 
 
+
 const submitCode = async ({ language, code, stdin = "" }) => {
-    const languageId = languageIds[language];
+  const languageId = languageIds[language];
 
-    if (!languageId) {
-        throw new Error("Unsupported programming language");
-    }
+  if (!languageId) {
+    throw new Error(`Unsupported language: ${language}`);
+  }
 
-    try {
-        const response = await judge0Client.post(
-            "/submissions",
-            {
-                language_id: languageId,
-                source_code: code,
-                stdin,
-            },
-            {
-                params: {
-                    base64_encoded: "false",
-                    wait: "false",
-                },
-            }
-        );
+  try {
+    const response = await judge0Client.post(
+      "/submissions",
+      {
+        language_id: languageId,
+        source_code: Buffer.from(code, "utf8").toString("base64"),
+        stdin: Buffer.from(stdin, "utf8").toString("base64"),
+      },
+      {
+        params: {
+          base64_encoded: "true",
+          wait: "false",
+        },
+      }
+    );
 
-        return response.data;
-
-    } catch (error) {
-        handleJudge0Error(error);
-    }
+    return response.data;
+  } catch (error) {
+    handleJudge0Error(error);
+  }
 };
 
+
+
 const getSubmissionResult = async (token) => {
-    try {
-        const response = await judge0Client.get(
-            `/submissions/${encodeURIComponent(token)}`,
-            {
-                params: {
-                    base64_encoded: "false",
-                    fields: [
-                        "token",
-                        "stdout",
-                        "stderr",
-                        "compile_output",
-                        "message",
-                        "status",
-                        "time",
-                        "memory",
-                    ].join(","),
-                },
-            }
-        );
+  try {
+    const response = await judge0Client.get(
+      `/submissions/${token}`,
+      {
+        params: {
+          base64_encoded: "true",
+          fields:
+            "token,stdout,stderr,compile_output,message,status,time,memory",
+        },
+      }
+    );
 
-        return response.data;
+    const result = response.data;
 
-    } catch (error) {
-        handleJudge0Error(error);
-    }
+    return {
+      ...result,
+      stdout: result.stdout
+        ? Buffer.from(result.stdout, "base64").toString("utf8")
+        : null,
+      stderr: result.stderr
+        ? Buffer.from(result.stderr, "base64").toString("utf8")
+        : null,
+      compile_output: result.compile_output
+        ? Buffer.from(result.compile_output, "base64").toString("utf8")
+        : null,
+      message: result.message
+        ? Buffer.from(result.message, "base64").toString("utf8")
+        : null,
+    };
+  } catch (error) {
+    handleJudge0Error(error);
+  }
 };
 
 module.exports = {
