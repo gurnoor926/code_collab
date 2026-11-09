@@ -26,24 +26,28 @@ const TERMINAL_STATUS_IDS = new Set([
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const buildExecutionCode = ({ language, code, functionName }) => {
-  // Preserve existing execution for other languages
-  // and JavaScript problems using stdin/stdout.
-  if (language !== "javascript" || !functionName) {
+  if (!["javascript", "python"].includes(language)) {
     return code;
   }
 
-  if (!/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(functionName)) {
-    throw new Error("Invalid problem function name");
+  if (
+    typeof functionName !== "string" ||
+    !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(functionName)
+  ) {
+    throw new Error(
+      `A valid function name is required for ${language} problems`
+    );
   }
 
-  return `
+  // JavaScript function harness
+  if (language === "javascript") {
+    return `
 console.log = () => {};
 console.info = () => {};
 console.debug = () => {};
 
 ${code}
 
-// CodeCollab JavaScript test harness
 (async () => {
     const __input = JSON.parse(
         require("fs").readFileSync(0, "utf8")
@@ -57,16 +61,53 @@ ${code}
 
     const __serialized = JSON.stringify(__result);
 
-process.stdout.write(
-    typeof __serialized === "undefined"
-        ? "null"
-        : __serialized
-);
+    process.stdout.write(
+        typeof __serialized === "undefined"
+            ? "null"
+            : __serialized
+    );
 })().catch((error) => {
     console.error(error);
     process.exitCode = 1;
 });
 `;
+  }
+
+  // Python function harness
+  if (language === "python") {
+    return `
+import sys
+import json
+import contextlib
+
+${code}
+
+__output = sys.stdout
+
+try:
+    __input = json.loads(sys.stdin.read())
+
+    if isinstance(__input, dict):
+        __args = list(__input.values())
+    elif isinstance(__input, list):
+        __args = __input
+    else:
+        raise ValueError("Test input must be a JSON object or array")
+
+    with contextlib.redirect_stdout(sys.stderr):
+        __result = ${functionName}(*__args)
+
+    __output.write(
+        json.dumps(__result, separators=(",", ":"))
+    )
+
+except Exception as error:
+    print(str(error), file=sys.stderr)
+    sys.exit(1)
+`;
+  }
+
+  return code;
 };
 
 // submit code to judge0 and wait for its terminal result.
@@ -190,7 +231,7 @@ const runExamples = async ({ userId, problemId, language, code }) => {
   const problem = await Problem.findOne({
     _id: problemId,
     isPublished: true,
-  }).select("_id functionName");
+  }).select("_id functionName functionNames");
 
   if (!problem) {
     const error = new Error("Problem not found or not published");
@@ -209,12 +250,15 @@ const runExamples = async ({ userId, problemId, language, code }) => {
     error.statusCode = 400;
     throw error;
   }
+  const functionName =
+  problem.functionNames?.get(language) ||
+  (language === "javascript" ? problem.functionName : null);
 
   const results = await evaluateTestCases({
     language,
     code,
     testCases,
-    functionName: problem.functionName,
+    functionName,
   });
 
   return {
@@ -259,7 +303,7 @@ const submitSolution = async ({
   const problem = await Problem.findOne({
     _id: problemId,
     isPublished: true,
-  }).select("_id functionName");
+  }).select("_id functionName functionNames");
 
   if (!problem) {
     const error = new Error("Problem not found or not Published");
@@ -289,12 +333,16 @@ const submitSolution = async ({
     passedTestCases: 0,
   });
 
+  const functionName =
+  problem.functionNames?.get(language) ||
+  (language === "javascript" ? problem.functionName : null);
+
   try {
     const results = await evaluateTestCases({
       language,
       code,
       testCases,
-      functionName: problem.functionName,
+      functionName,
     });
 
     const passedTestCases = results.filter((result) => result.passed).length;

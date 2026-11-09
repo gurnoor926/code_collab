@@ -69,6 +69,11 @@ const problemSchema = new mongoose.Schema(
       match: [/^[a-zA-Z_$][a-zA-Z0-9_$]*$/, "Invalid function name"],
       default: null,
     },
+    functionNames: {
+    type: Map,
+    of: String,
+    default: {},
+},
     starterCode: {
       type: Map,
       of: String,
