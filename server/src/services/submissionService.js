@@ -1,6 +1,10 @@
 const Submission = require("../models/Submission");
 const TestCase = require("../models/TestCase");
 const Problem = require("../models/Problem");
+const validateExecutionInput = require("../utils/validateExecutionInput");
+const {
+  buildExecutionCode,
+} = require("./executionHarnessService");
 
 const { submitCode, getSubmissionResult } = require("./judge0Service");
 
@@ -24,221 +28,6 @@ const TERMINAL_STATUS_IDS = new Set([
 ]);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const buildExecutionCode = ({ language, code, functionName }) => {
-  if (!["javascript", "python"].includes(language)) {
-    return code;
-  }
-
-  if (
-    typeof functionName !== "string" ||
-    !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(functionName)
-  ) {
-    throw new Error(
-      `A valid function name is required for ${language} problems`
-    );
-  }
-
-  // JavaScript function harness
-  if (language === "javascript") {
-    return `
-console.log = () => {};
-console.info = () => {};
-console.debug = () => {};
-
-${code}
-
-(async () => {
-    const __input = JSON.parse(
-        require("fs").readFileSync(0, "utf8")
-    );
-
-    const __args = Array.isArray(__input)
-        ? __input
-        : Object.values(__input);
-
-    const __result = await ${functionName}(...__args);
-
-    const __serialized = JSON.stringify(__result);
-
-    process.stdout.write(
-        typeof __serialized === "undefined"
-            ? "null"
-            : __serialized
-    );
-})().catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-});
-`;
-  }
-
-  // Python function harness
-  if (language === "python") {
-    return `
-import sys
-import json
-import contextlib
-
-${code}
-
-__output = sys.stdout
-
-try:
-    __input = json.loads(sys.stdin.read())
-
-    if isinstance(__input, dict):
-        __args = list(__input.values())
-    elif isinstance(__input, list):
-        __args = __input
-    else:
-        raise ValueError("Test input must be a JSON object or array")
-
-    with contextlib.redirect_stdout(sys.stderr):
-        __result = ${functionName}(*__args)
-
-    __output.write(
-        json.dumps(__result, separators=(",", ":"))
-    )
-
-except Exception as error:
-    print(str(error), file=sys.stderr)
-    sys.exit(1)
-`;
-  }
-
-  if (language === "cpp") {
-  return `
-#include <bits/stdc++.h>
-using namespace std;
-
-${code}
-
-int main() {
-    string input(
-        (istreambuf_iterator<char>(cin)),
-        istreambuf_iterator<char>()
-    );
-
-    regex numsRegex("\\\\\"nums\\\\\"\\\\s*:\\\\s*\\\\[([^]]*)\\\\]");
-    regex targetRegex("\\\\\"target\\\\\"\\\\s*:\\\\s*(-?\\\\d+)");
-
-    smatch numsMatch;
-    smatch targetMatch;
-
-    if (!regex_search(input, numsMatch, numsRegex) ||
-        !regex_search(input, targetMatch, targetRegex)) {
-        cerr << "Invalid test input";
-        return 1;
-    }
-
-    vector<int> nums;
-    string numsString = numsMatch[1].str();
-
-    regex numberRegex("-?\\\\d+");
-    auto begin = sregex_iterator(
-        numsString.begin(),
-        numsString.end(),
-        numberRegex
-    );
-
-    auto end = sregex_iterator();
-
-    for (auto it = begin; it != end; ++it) {
-        nums.push_back(stoi(it->str()));
-    }
-
-    int target = stoi(targetMatch[1].str());
-
-    vector<int> result = ${functionName}(nums, target);
-
-    cout << "[";
-    for (size_t i = 0; i < result.size(); i++) {
-        if (i > 0) cout << ",";
-        cout << result[i];
-    }
-    cout << "]";
-
-    return 0;
-}
-`;
-}
-
-if (language === "java") {
-  return `
-import java.util.*;
-import java.util.regex.*;
-
-${code}
-
-public class Main {
-    public static void main(String[] args) {
-        try {
-            Scanner scanner = new Scanner(System.in);
-            StringBuilder inputBuilder = new StringBuilder();
-
-            while (scanner.hasNextLine()) {
-                inputBuilder.append(scanner.nextLine());
-            }
-
-            String input = inputBuilder.toString();
-
-            Pattern numsPattern = Pattern.compile(
-                "\\\\\"nums\\\\\"\\\\s*:\\\\s*\\\\[([^]]*)\\\\]"
-            );
-
-            Pattern targetPattern = Pattern.compile(
-                "\\\\\"target\\\\\"\\\\s*:\\\\s*(-?\\\\d+)"
-            );
-
-            Matcher numsMatcher = numsPattern.matcher(input);
-            Matcher targetMatcher = targetPattern.matcher(input);
-
-            if (!numsMatcher.find() || !targetMatcher.find()) {
-                throw new IllegalArgumentException("Invalid test input");
-            }
-
-            String numsString = numsMatcher.group(1).trim();
-
-            int[] nums;
-
-            if (numsString.isEmpty()) {
-                nums = new int[0];
-            } else {
-                String[] parts = numsString.split(",");
-                nums = new int[parts.length];
-
-                for (int i = 0; i < parts.length; i++) {
-                    nums[i] = Integer.parseInt(parts[i].trim());
-                }
-            }
-
-            int target = Integer.parseInt(targetMatcher.group(1));
-
-            Solution solution = new Solution();
-            int[] result = solution.${functionName}(nums, target);
-
-            StringBuilder output = new StringBuilder("[");
-
-            for (int i = 0; i < result.length; i++) {
-                if (i > 0) output.append(",");
-                output.append(result[i]);
-            }
-
-            output.append("]");
-            System.out.print(output.toString());
-
-        } catch (Exception error) {
-            System.err.println(error.getMessage());
-            System.exit(1);
-        }
-    }
-}
-`;
-}
-
-  return code;
-};
 
 // submit code to judge0 and wait for its terminal result.
 
@@ -282,21 +71,58 @@ const executeAndWait = async ({ language, code, stdin }) => {
 
 // run against test cases
 
+
+
 const evaluateTestCases = async ({
   language,
   code,
   testCases,
-  functionName = null,
+  problem,
 }) => {
   const results = [];
 
+  const executionConfig = problem.executionConfig || {};
+
   for (const testCase of testCases) {
-    const executionCode = buildExecutionCode({
-      language,
-      code,
-      functionName,
+    // Validate input before execution
+    const validation = validateExecutionInput({
+      input: testCase.input,
+      executionConfig,
     });
 
+    if (!validation.valid) {
+      results.push({
+        testCaseId: testCase._id,
+        passed: false,
+        status: "Invalid Test Case",
+        executionTime: null,
+        memoryUsed: null,
+        error: testCase.isHidden
+          ? "Hidden test case configuration is invalid."
+          : validation.error,
+        isHidden: testCase.isHidden,
+      });
+
+      continue;
+    }
+
+    // Generate language-specific function harness
+    let executionCode;
+
+    try {
+      executionCode =
+        executionConfig.mode === "function"
+          ? buildExecutionCode({
+              language,
+              code,
+              problem,
+            })
+          : code;
+    } catch (error) {
+      throw error;
+    }
+
+    // Execute through Judge0
     const execution = await executeAndWait({
       language,
       code: executionCode,
@@ -332,7 +158,7 @@ const evaluateTestCases = async ({
 
     const passed = compareOutput(
       execution.stdout ?? "",
-      testCase.expectedOutput,
+      testCase.expectedOutput
     );
 
     results.push({
@@ -349,6 +175,8 @@ const evaluateTestCases = async ({
   return results;
 };
 
+
+
 // run only public examples , this does not create a formal submission record.
 
 const runExamples = async ({ userId, problemId, language, code }) => {
@@ -361,7 +189,7 @@ const runExamples = async ({ userId, problemId, language, code }) => {
   const problem = await Problem.findOne({
     _id: problemId,
     isPublished: true,
-  }).select("_id functionName functionNames");
+  }).select("_id executionConfig functionName functionNames");
 
   if (!problem) {
     const error = new Error("Problem not found or not published");
@@ -380,16 +208,13 @@ const runExamples = async ({ userId, problemId, language, code }) => {
     error.statusCode = 400;
     throw error;
   }
-  const functionName =
-  problem.functionNames?.get(language) ||
-  (language === "javascript" ? problem.functionName : null);
 
-  const results = await evaluateTestCases({
-    language,
-    code,
-    testCases,
-    functionName,
-  });
+ const results = await evaluateTestCases({
+  language,
+  code,
+  testCases,
+  problem,
+});
 
   return {
     problemId,
@@ -433,7 +258,7 @@ const submitSolution = async ({
   const problem = await Problem.findOne({
     _id: problemId,
     isPublished: true,
-  }).select("_id functionName functionNames");
+  }).select("_id executionConfig functionName functionNames");
 
   if (!problem) {
     const error = new Error("Problem not found or not Published");
@@ -463,17 +288,13 @@ const submitSolution = async ({
     passedTestCases: 0,
   });
 
-  const functionName =
-  problem.functionNames?.get(language) ||
-  (language === "javascript" ? problem.functionName : null);
-
   try {
     const results = await evaluateTestCases({
-      language,
-      code,
-      testCases,
-      functionName,
-    });
+  language,
+  code,
+  testCases,
+  problem,
+});
 
     const passedTestCases = results.filter((result) => result.passed).length;
 
