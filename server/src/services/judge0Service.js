@@ -21,29 +21,33 @@ const judge0Client = axios.create({
     },
 });
 
+
 const handleJudge0Error = (error) => {
-    if (error.response) {
-        const judge0Error = new Error(
-            `Judge0 API returned status ${error.response.status}`
-        );
+  if (error.response) {
+    console.error("Judge0 API Error:", {
+      status: error.response.status,
+      data: error.response.data,
+    });
 
-        judge0Error.statusCode = error.response.status;
-        judge0Error.originalError = error;
+    const judge0Error = new Error(
+      `Judge0 API returned status ${error.response.status}`
+    );
 
-        throw judge0Error;
-    }
+    judge0Error.statusCode = error.response.status;
+    judge0Error.judge0Response = error.response.data;
 
-    if (error.code === "ECONNABORTED") {
-        const timeoutError = new Error("Judge0 request timed out");
-        timeoutError.code = "JUDGE0_TIMEOUT";
-        throw timeoutError;
-    }
+    throw judge0Error;
+  }
 
-    const networkError = new Error("Unable to connect to Judge0");
-    networkError.code = "JUDGE0_NETWORK_ERROR";
+  if (error.code === "ECONNABORTED") {
+    throw new Error("Judge0 API request timed out");
+  }
 
-    throw networkError;
+  throw new Error(
+    `Judge0 network error: ${error.message}`
+  );
 };
+
 
 const submitCode = async ({ language, code, stdin = "" }) => {
     const languageId = languageIds[language];
