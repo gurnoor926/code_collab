@@ -64,19 +64,19 @@ const problemSchema = new mongoose.Schema(
       },
     },
     executionConfig: {
-  type: "function",
-  arguments: [
-    {
-      name: "nums",
-      type: "integer_array"
+      type: "function",
+      arguments: [
+        {
+          name: "nums",
+          type: "integer_array",
+        },
+        {
+          name: "target",
+          type: "integer",
+        },
+      ],
+      returnType: "integer_array",
     },
-    {
-      name: "target",
-      type: "integer"
-    }
-  ],
-  returnType: "integer_array"
-}
     functionName: {
       type: String,
       trim: true,
@@ -84,10 +84,10 @@ const problemSchema = new mongoose.Schema(
       default: null,
     },
     functionNames: {
-    type: Map,
-    of: String,
-    default: {},
-},
+      type: Map,
+      of: String,
+      default: {},
+    },
     starterCode: {
       type: Map,
       of: String,
