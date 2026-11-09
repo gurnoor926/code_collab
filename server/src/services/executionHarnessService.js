@@ -55,6 +55,20 @@ const validateArgumentsConfig = (argumentsConfig) => {
   }
 };
 
+const ALLOWED_RETURN_TYPES = new Set([
+  "integer",
+  "number",
+  "string",
+  "boolean",
+  "integer_array",
+  "number_array",
+  "string_array",
+  "boolean_array",
+  "integer_matrix",
+  "string_matrix",
+  "void",
+]);
+
 // ======================================================
 // JAVASCRIPT HARNESS
 // ======================================================
@@ -63,6 +77,7 @@ const buildJavaScriptHarness = ({
   code,
   functionName,
   argumentsConfig,
+  returnType,
 }) => {
   const argumentNames = JSON.stringify(
     argumentsConfig.map((argument) => argument.name)
@@ -95,7 +110,75 @@ if (Array.isArray(__input)) {
   throw new Error("Input must be a JSON object or array");
 }
 
+if (__args.length !== ${argumentsConfig.length}) {
+  throw new Error("Invalid argument count");
+}
+
+const __isInteger = (value) =>
+  Number.isInteger(value) &&
+  value >= -2147483648 &&
+  value <= 2147483647;
+
+const __validators = {
+  integer: __isInteger,
+
+  number: (value) =>
+    typeof value === "number" && Number.isFinite(value),
+
+  string: (value) => typeof value === "string",
+
+  boolean: (value) => typeof value === "boolean",
+
+  integer_array: (value) =>
+    Array.isArray(value) && value.every(__isInteger),
+
+  number_array: (value) =>
+    Array.isArray(value) &&
+    value.every(
+      (item) =>
+        typeof item === "number" && Number.isFinite(item)
+    ),
+
+  string_array: (value) =>
+    Array.isArray(value) &&
+    value.every((item) => typeof item === "string"),
+
+  boolean_array: (value) =>
+    Array.isArray(value) &&
+    value.every((item) => typeof item === "boolean"),
+
+  integer_matrix: (value) =>
+    Array.isArray(value) &&
+    value.every(
+      (row) =>
+        Array.isArray(row) && row.every(__isInteger)
+    ),
+
+  string_matrix: (value) =>
+    Array.isArray(value) &&
+    value.every(
+      (row) =>
+        Array.isArray(row) &&
+        row.every((item) => typeof item === "string")
+    ),
+
+  void: (value) => typeof value === "undefined",
+};
+
 const __result = ${functionName}(...__args);
+
+const __validator = __validators[${JSON.stringify(returnType)}];
+
+if (!__validator) {
+  throw new Error("Unsupported return type");
+}
+
+if (!__validator(__result)) {
+  throw new TypeError(
+    "Function returned an incompatible value. Expected: ${returnType}"
+  );
+}
+
 const __serialized = JSON.stringify(__result);
 
 process.stdout.write(
@@ -112,6 +195,7 @@ const buildPythonHarness = ({
   code,
   functionName,
   argumentsConfig,
+  returnType,
 }) => {
   const argumentNames = JSON.stringify(
     argumentsConfig.map((argument) => argument.name)
@@ -121,6 +205,7 @@ const buildPythonHarness = ({
 import sys
 import json
 import contextlib
+import math
 
 ${code}
 
@@ -142,20 +227,88 @@ elif isinstance(__input, dict):
 else:
     raise ValueError("Input must be a JSON object or array")
 
+if len(__args) != ${argumentsConfig.length}:
+    raise ValueError("Invalid argument count")
+
+
+def __is_integer(value):
+    return (
+        type(value) is int and
+        -2147483648 <= value <= 2147483647
+    )
+
+
+def __validate_result(value, expected_type):
+    validators = {
+        "integer": __is_integer,
+
+        "number": lambda v:
+            type(v) in (int, float) and math.isfinite(v),
+
+        "string": lambda v: type(v) is str,
+
+        "boolean": lambda v: type(v) is bool,
+
+        "integer_array": lambda v:
+            type(v) is list and all(__is_integer(x) for x in v),
+
+        "number_array": lambda v:
+            type(v) is list and all(
+                type(x) in (int, float) and math.isfinite(x)
+                for x in v
+            ),
+
+        "string_array": lambda v:
+            type(v) is list and all(type(x) is str for x in v),
+
+        "boolean_array": lambda v:
+            type(v) is list and all(type(x) is bool for x in v),
+
+        "integer_matrix": lambda v:
+            type(v) is list and all(
+                type(row) is list and all(__is_integer(x) for x in row)
+                for row in v
+            ),
+
+        "string_matrix": lambda v:
+            type(v) is list and all(
+                type(row) is list and all(type(x) is str for x in row)
+                for row in v
+            ),
+
+        "void": lambda v: v is None,
+    }
+
+    validator = validators.get(expected_type)
+
+    if validator is None:
+        raise TypeError("Unsupported return type: " + expected_type)
+
+    if not validator(value):
+        raise TypeError(
+            "Function returned an incompatible value. Expected: " +
+            expected_type
+        )
+
+
 __stdout = sys.stdout
 
 with contextlib.redirect_stdout(sys.stderr):
     __result = ${functionName}(*__args)
 
+__validate_result(__result, ${JSON.stringify(returnType)})
+
 __stdout.write(
-    json.dumps(__result, separators=(",", ":"))
+    json.dumps(__result, separators=(",", ":"), allow_nan=False)
 )
 `;
 };
 
+
 // ======================================================
 // C++ HARNESS - C++14 COMPATIBLE
 // ======================================================
+
 
 const buildCppHarness = ({
   code,
@@ -237,15 +390,15 @@ const buildCppHarness = ({
       }
 
       return `
-    ${mapping.type} __arg${index} =
-        ${mapping.converter}(
-            getArgument(
-                __root,
-                ${JSON.stringify(argument.name)},
-                ${index}
-            )
-        );
-`;
+        ${mapping.type} __arg${index} =
+            ${mapping.converter}(
+                getArgument(
+                    __root,
+                    ${JSON.stringify(argument.name)},
+                    ${index}
+                )
+            );
+      `;
     })
     .join("\n");
 
@@ -256,13 +409,31 @@ const buildCppHarness = ({
   const invocation =
     returnType === "void"
       ? `
+        static_assert(
+            is_same<
+                decltype(${functionName}(${argumentList})),
+                void
+            >::value,
+            "Function must return void"
+        );
+
         ${functionName}(${argumentList});
         cout << "null";
-`
+      `
       : `
+        static_assert(
+            is_same<
+                typename decay<
+                    decltype(${functionName}(${argumentList}))
+                >::type,
+                ${cppReturnTypes[returnType]}
+            >::value,
+            "Function return type does not match executionConfig"
+        );
+
         auto __result = ${functionName}(${argumentList});
         cout << serialize(__result);
-`;
+      `;
 
   return String.raw`
 #include <bits/stdc++.h>
@@ -411,7 +582,6 @@ private:
         char c = peek();
         Json result;
 
-        // Object
         if (c == '{') {
             result.type = Json::OBJECT;
             pos++;
@@ -456,7 +626,6 @@ private:
             return result;
         }
 
-        // Array
         if (c == '[') {
             result.type = Json::ARRAY;
             pos++;
@@ -487,14 +656,12 @@ private:
             return result;
         }
 
-        // String
         if (c == '"') {
             result.type = Json::STRING;
             result.text = parseString();
             return result;
         }
 
-        // Boolean
         if (c == 't' && s.compare(pos, 4, "true") == 0) {
             result.type = Json::BOOLEAN;
             result.boolean = true;
@@ -509,14 +676,12 @@ private:
             return result;
         }
 
-        // Null
         if (c == 'n' && s.compare(pos, 4, "null") == 0) {
             result.type = Json::NIL;
             pos += 4;
             return result;
         }
 
-        // Number
         if (c == '-' || isdigit(static_cast<unsigned char>(c))) {
             size_t start = pos;
 
@@ -630,7 +795,7 @@ const Json& getArgument(
 }
 
 // ======================================================
-// TYPE CONVERSION - C++14
+// TYPE CONVERSION
 // ======================================================
 
 int convert(const Json& value) {
@@ -647,8 +812,11 @@ int convert(const Json& value) {
 }
 
 double convertDouble(const Json& value) {
-    if (value.type != Json::NUMBER) {
-        throw runtime_error("Expected number");
+    if (
+        value.type != Json::NUMBER ||
+        !isfinite(value.number)
+    ) {
+        throw runtime_error("Expected finite number");
     }
 
     return value.number;
@@ -755,13 +923,13 @@ vector<vector<string>> convertStringMatrix(const Json& value) {
 }
 
 // ======================================================
-// JSON SERIALIZATION - C++14 COMPATIBLE
+// JSON SERIALIZATION
 // ======================================================
 
 string escapeString(const string& value) {
     string result = "\"";
 
-    for (char c : value) {
+    for (unsigned char c : value) {
         switch (c) {
             case '"': result += "\\\""; break;
             case '\\': result += "\\\\"; break;
@@ -772,14 +940,13 @@ string escapeString(const string& value) {
             case '\t': result += "\\t"; break;
 
             default:
-                if (static_cast<unsigned char>(c) < 0x20) {
+                if (c < 0x20) {
                     const char* hex = "0123456789abcdef";
-
                     result += "\\u00";
                     result += hex[(c >> 4) & 0x0F];
                     result += hex[c & 0x0F];
                 } else {
-                    result += c;
+                    result += static_cast<char>(c);
                 }
         }
     }
@@ -800,7 +967,6 @@ string serialize(bool value) {
     return value ? "true" : "false";
 }
 
-// Integer serialization
 template <typename T>
 typename enable_if<
     is_integral<T>::value &&
@@ -810,7 +976,6 @@ typename enable_if<
     return to_string(value);
 }
 
-// Floating-point serialization
 template <typename T>
 typename enable_if<
     is_floating_point<T>::value,
@@ -826,15 +991,12 @@ typename enable_if<
     return output.str();
 }
 
-// Vector serialization
 template <typename T>
 string serialize(const vector<T>& values) {
     string result = "[";
 
     for (size_t i = 0; i < values.size(); i++) {
-        if (i > 0) {
-            result += ",";
-        }
+        if (i > 0) result += ",";
 
         result += serialize(values[i]);
     }
@@ -844,14 +1006,11 @@ string serialize(const vector<T>& values) {
     return result;
 }
 
-// Boolean vector serialization
 string serialize(const vector<bool>& values) {
     string result = "[";
 
     for (size_t i = 0; i < values.size(); i++) {
-        if (i > 0) {
-            result += ",";
-        }
+        if (i > 0) result += ",";
 
         result += values[i] ? "true" : "false";
     }
@@ -890,6 +1049,7 @@ int main() {
 };
 
 
+
 const buildJavaHarness = ({
   code,
   functionName,
@@ -909,9 +1069,29 @@ const buildJavaHarness = ({
     string_matrix: "String[][]",
   };
 
+  const javaReturnTypes = {
+    integer: "int",
+    number: "double",
+    string: "String",
+    boolean: "boolean",
+    integer_array: "int[]",
+    number_array: "double[]",
+    string_array: "String[]",
+    boolean_array: "boolean[]",
+    integer_matrix: "int[][]",
+    string_matrix: "String[][]",
+    void: "void",
+  };
+
+  if (!javaReturnTypes[returnType]) {
+    throw new Error(
+      `Unsupported Java return type: ${returnType}`
+    );
+  }
+
   const argumentNames = `Arrays.asList(${argumentsConfig
-  .map((argument) => JSON.stringify(argument.name))
-  .join(", ")})`;
+    .map((argument) => JSON.stringify(argument.name))
+    .join(", ")})`;
 
   const argumentTypes = argumentsConfig.map((argument) => {
     const type = javaTypes[argument.type];
@@ -925,14 +1105,20 @@ const buildJavaHarness = ({
     return type;
   });
 
+  const argumentClassTypes = argumentTypes
+    .map((type) => `${type}.class`)
+    .join(", ");
+
+  const expectedReturnClass = `${javaReturnTypes[returnType]}.class`;
+
   const declarations = argumentTypes
     .map((type, index) => {
       return `
-      ${type} __arg${index} =
-          (${type}) convert(
-              __args.get(${index}),
-              "${argumentsConfig[index].type}"
-          );
+        ${type} __arg${index} =
+            (${type}) convert(
+                __args.get(${index}),
+                "${argumentsConfig[index].type}"
+            );
       `;
     })
     .join("\n");
@@ -941,18 +1127,37 @@ const buildJavaHarness = ({
     .map((_, index) => `__arg${index}`)
     .join(", ");
 
-  const invocation =
-    returnType === "void"
-      ? `
-      __solution.${functionName}(${invocationArguments});
-      System.out.print("null");
-      `
-      : `
-      Object __result =
-          __solution.${functionName}(${invocationArguments});
+  const invocation = `
+      java.lang.reflect.Method __method =
+          Solution.class.getDeclaredMethod(
+              "${functionName}",
+              new Class<?>[] { ${argumentClassTypes} }
+          );
 
-      System.out.print(toJson(__result));
-      `;
+      __method.setAccessible(true);
+
+      if (__method.getReturnType() != ${expectedReturnClass}) {
+          throw new RuntimeException(
+              "Function return type does not match executionConfig. Expected: ${returnType}"
+          );
+      }
+
+      ${
+        returnType === "void"
+          ? `
+            __solution.${functionName}(${invocationArguments});
+            System.out.print("null");
+          `
+          : `
+            Object __result =
+                __solution.${functionName}(${invocationArguments});
+
+            validateResult(__result, "${returnType}");
+
+            System.out.print(toJson(__result));
+          `
+      }
+  `;
 
   return `
 import java.util.*;
@@ -983,6 +1188,7 @@ public class Main {
 
         char peek() {
             skipWhitespace();
+
             return pos < input.length()
                 ? input.charAt(pos)
                 : '\\0';
@@ -993,7 +1199,9 @@ public class Main {
             skipWhitespace();
 
             if (pos != input.length()) {
-                throw new RuntimeException("Unexpected JSON content");
+                throw new RuntimeException(
+                    "Unexpected JSON content"
+                );
             }
 
             return value;
@@ -1009,16 +1217,28 @@ public class Main {
             if (c == '"') return parseString();
 
             if (c == 't') {
+                if (!input.startsWith("true", pos)) {
+                    throw new RuntimeException("Invalid boolean");
+                }
+
                 pos += 4;
                 return true;
             }
 
             if (c == 'f') {
+                if (!input.startsWith("false", pos)) {
+                    throw new RuntimeException("Invalid boolean");
+                }
+
                 pos += 5;
                 return false;
             }
 
             if (c == 'n') {
+                if (!input.startsWith("null", pos)) {
+                    throw new RuntimeException("Invalid null");
+                }
+
                 pos += 4;
                 return null;
             }
@@ -1041,17 +1261,23 @@ public class Main {
             }
 
             while (true) {
+                skipWhitespace();
+
                 String key = parseString();
 
                 skipWhitespace();
 
-                if (input.charAt(pos++) != ':') {
+                if (pos >= input.length() || input.charAt(pos++) != ':') {
                     throw new RuntimeException("Expected colon");
                 }
 
                 result.put(key, parseValue());
 
                 skipWhitespace();
+
+                if (pos >= input.length()) {
+                    throw new RuntimeException("Unexpected end of object");
+                }
 
                 char separator = input.charAt(pos++);
 
@@ -1080,6 +1306,10 @@ public class Main {
 
                 skipWhitespace();
 
+                if (pos >= input.length()) {
+                    throw new RuntimeException("Unexpected end of array");
+                }
+
                 char separator = input.charAt(pos++);
 
                 if (separator == ']') break;
@@ -1093,7 +1323,7 @@ public class Main {
         }
 
         String parseString() {
-            if (input.charAt(pos++) != '"') {
+            if (pos >= input.length() || input.charAt(pos++) != '"') {
                 throw new RuntimeException("Expected string");
             }
 
@@ -1102,24 +1332,61 @@ public class Main {
             while (pos < input.length()) {
                 char c = input.charAt(pos++);
 
-                if (c == '"') return result.toString();
+                if (c == '"') {
+                    return result.toString();
+                }
 
                 if (c == '\\\\') {
+                    if (pos >= input.length()) {
+                        throw new RuntimeException("Invalid escape");
+                    }
+
                     char escaped = input.charAt(pos++);
 
                     switch (escaped) {
-                        case '"': result.append('"'); break;
-                        case '\\\\': result.append('\\\\'); break;
-                        case '/': result.append('/'); break;
-                        case 'b': result.append('\\b'); break;
-                        case 'f': result.append('\\f'); break;
-                        case 'n': result.append('\\n'); break;
-                        case 'r': result.append('\\r'); break;
-                        case 't': result.append('\\t'); break;
+                        case '"':
+                            result.append('"');
+                            break;
+
+                        case '\\\\':
+                            result.append('\\\\');
+                            break;
+
+                        case '/':
+                            result.append('/');
+                            break;
+
+                        case 'b':
+                            result.append('\\b');
+                            break;
+
+                        case 'f':
+                            result.append('\\f');
+                            break;
+
+                        case 'n':
+                            result.append('\\n');
+                            break;
+
+                        case 'r':
+                            result.append('\\r');
+                            break;
+
+                        case 't':
+                            result.append('\\t');
+                            break;
 
                         case 'u':
+                            if (pos + 4 > input.length()) {
+                                throw new RuntimeException("Invalid unicode escape");
+                            }
+
                             String hex = input.substring(pos, pos + 4);
-                            result.append((char) Integer.parseInt(hex, 16));
+
+                            result.append(
+                                (char) Integer.parseInt(hex, 16)
+                            );
+
                             pos += 4;
                             break;
 
@@ -1127,6 +1394,12 @@ public class Main {
                             throw new RuntimeException("Invalid escape");
                     }
                 } else {
+                    if (c < 32) {
+                        throw new RuntimeException(
+                            "Invalid control character in string"
+                        );
+                    }
+
                     result.append(c);
                 }
             }
@@ -1137,20 +1410,88 @@ public class Main {
         Number parseNumber() {
             int start = pos;
 
-            while (
-                pos < input.length() &&
-                "-+0123456789.eE".indexOf(input.charAt(pos)) >= 0
-            ) {
+            if (input.charAt(pos) == '-') {
                 pos++;
+            }
+
+            if (pos >= input.length()) {
+                throw new RuntimeException("Invalid number");
+            }
+
+            if (input.charAt(pos) == '0') {
+                pos++;
+            } else {
+                if (!Character.isDigit(input.charAt(pos))) {
+                    throw new RuntimeException("Invalid number");
+                }
+
+                while (
+                    pos < input.length() &&
+                    Character.isDigit(input.charAt(pos))
+                ) {
+                    pos++;
+                }
+            }
+
+            boolean decimal = false;
+
+            if (pos < input.length() && input.charAt(pos) == '.') {
+                decimal = true;
+                pos++;
+
+                if (
+                    pos >= input.length() ||
+                    !Character.isDigit(input.charAt(pos))
+                ) {
+                    throw new RuntimeException("Invalid number");
+                }
+
+                while (
+                    pos < input.length() &&
+                    Character.isDigit(input.charAt(pos))
+                ) {
+                    pos++;
+                }
+            }
+
+            if (
+                pos < input.length() &&
+                (input.charAt(pos) == 'e' || input.charAt(pos) == 'E')
+            ) {
+                decimal = true;
+                pos++;
+
+                if (
+                    pos < input.length() &&
+                    (input.charAt(pos) == '+' || input.charAt(pos) == '-')
+                ) {
+                    pos++;
+                }
+
+                if (
+                    pos >= input.length() ||
+                    !Character.isDigit(input.charAt(pos))
+                ) {
+                    throw new RuntimeException("Invalid number");
+                }
+
+                while (
+                    pos < input.length() &&
+                    Character.isDigit(input.charAt(pos))
+                ) {
+                    pos++;
+                }
             }
 
             String number = input.substring(start, pos);
 
-            return number.contains(".") ||
-                   number.contains("e") ||
-                   number.contains("E")
-                ? Double.parseDouble(number)
-                : Long.parseLong(number);
+            try {
+                return decimal
+                    ? Double.parseDouble(number)
+                    : Long.parseLong(number);
+            } catch (NumberFormatException error) {
+                throw new RuntimeException("Invalid number");
+            }
         }
     }
 
@@ -1158,29 +1499,39 @@ public class Main {
 
     static Object convert(Object value, String type) {
         switch (type) {
-            case "integer":
+
+            case "integer": {
                 if (!(value instanceof Number)) {
                     throw new RuntimeException("Expected integer");
                 }
 
-                long integer = ((Number) value).longValue();
+                double number = ((Number) value).doubleValue();
 
                 if (
-                    ((Number) value).doubleValue() != integer ||
-                    integer < Integer.MIN_VALUE ||
-                    integer > Integer.MAX_VALUE
+                    !Double.isFinite(number) ||
+                    number != Math.rint(number) ||
+                    number < Integer.MIN_VALUE ||
+                    number > Integer.MAX_VALUE
                 ) {
                     throw new RuntimeException("Invalid integer");
                 }
 
-                return (int) integer;
+                return (int) number;
+            }
 
-            case "number":
+            case "number": {
                 if (!(value instanceof Number)) {
                     throw new RuntimeException("Expected number");
                 }
 
-                return ((Number) value).doubleValue();
+                double number = ((Number) value).doubleValue();
+
+                if (!Double.isFinite(number)) {
+                    throw new RuntimeException("Invalid number");
+                }
+
+                return number;
+            }
 
             case "string":
                 if (!(value instanceof String)) {
@@ -1197,12 +1548,17 @@ public class Main {
                 return value;
 
             case "integer_array": {
+                if (!(value instanceof List<?>)) {
+                    throw new RuntimeException("Expected integer array");
+                }
+
                 List<?> list = (List<?>) value;
                 int[] result = new int[list.size()];
 
                 for (int i = 0; i < list.size(); i++) {
                     result[i] = (Integer) convert(
-                        list.get(i), "integer"
+                        list.get(i),
+                        "integer"
                     );
                 }
 
@@ -1210,12 +1566,17 @@ public class Main {
             }
 
             case "number_array": {
+                if (!(value instanceof List<?>)) {
+                    throw new RuntimeException("Expected number array");
+                }
+
                 List<?> list = (List<?>) value;
                 double[] result = new double[list.size()];
 
                 for (int i = 0; i < list.size(); i++) {
                     result[i] = (Double) convert(
-                        list.get(i), "number"
+                        list.get(i),
+                        "number"
                     );
                 }
 
@@ -1223,12 +1584,17 @@ public class Main {
             }
 
             case "string_array": {
+                if (!(value instanceof List<?>)) {
+                    throw new RuntimeException("Expected string array");
+                }
+
                 List<?> list = (List<?>) value;
                 String[] result = new String[list.size()];
 
                 for (int i = 0; i < list.size(); i++) {
                     result[i] = (String) convert(
-                        list.get(i), "string"
+                        list.get(i),
+                        "string"
                     );
                 }
 
@@ -1236,12 +1602,17 @@ public class Main {
             }
 
             case "boolean_array": {
+                if (!(value instanceof List<?>)) {
+                    throw new RuntimeException("Expected boolean array");
+                }
+
                 List<?> list = (List<?>) value;
                 boolean[] result = new boolean[list.size()];
 
                 for (int i = 0; i < list.size(); i++) {
                     result[i] = (Boolean) convert(
-                        list.get(i), "boolean"
+                        list.get(i),
+                        "boolean"
                     );
                 }
 
@@ -1249,12 +1620,17 @@ public class Main {
             }
 
             case "integer_matrix": {
+                if (!(value instanceof List<?>)) {
+                    throw new RuntimeException("Expected integer matrix");
+                }
+
                 List<?> rows = (List<?>) value;
                 int[][] result = new int[rows.size()][];
 
                 for (int i = 0; i < rows.size(); i++) {
                     result[i] = (int[]) convert(
-                        rows.get(i), "integer_array"
+                        rows.get(i),
+                        "integer_array"
                     );
                 }
 
@@ -1262,12 +1638,17 @@ public class Main {
             }
 
             case "string_matrix": {
+                if (!(value instanceof List<?>)) {
+                    throw new RuntimeException("Expected string matrix");
+                }
+
                 List<?> rows = (List<?>) value;
                 String[][] result = new String[rows.size()][];
 
                 for (int i = 0; i < rows.size(); i++) {
                     result[i] = (String[]) convert(
-                        rows.get(i), "string_array"
+                        rows.get(i),
+                        "string_array"
                     );
                 }
 
@@ -1281,6 +1662,104 @@ public class Main {
         }
     }
 
+    // ---------------- RETURN TYPE VALIDATION ----------------
+
+    static void validateResult(Object value, String type) {
+        boolean valid = false;
+
+        switch (type) {
+
+            case "integer":
+                valid = value instanceof Integer;
+                break;
+
+            case "number":
+                valid =
+                    value instanceof Double &&
+                    Double.isFinite((Double) value);
+                break;
+
+            case "string":
+                valid = value instanceof String;
+                break;
+
+            case "boolean":
+                valid = value instanceof Boolean;
+                break;
+
+            case "integer_array":
+                valid = value instanceof int[];
+                break;
+
+            case "number_array":
+                if (value instanceof double[]) {
+                    valid = true;
+
+                    for (double number : (double[]) value) {
+                        if (!Double.isFinite(number)) {
+                            valid = false;
+                            break;
+                        }
+                    }
+                }
+                break;
+
+            case "string_array":
+                if (value instanceof String[]) {
+                    valid = true;
+
+                    for (String item : (String[]) value) {
+                        if (item == null) {
+                            valid = false;
+                            break;
+                        }
+                    }
+                }
+                break;
+
+            case "boolean_array":
+                valid = value instanceof boolean[];
+                break;
+
+            case "integer_matrix":
+                valid = value instanceof int[][];
+                break;
+
+            case "string_matrix":
+                if (value instanceof String[][]) {
+                    valid = true;
+
+                    for (String[] row : (String[][]) value) {
+                        if (row == null) {
+                            valid = false;
+                            break;
+                        }
+
+                        for (String item : row) {
+                            if (item == null) {
+                                valid = false;
+                                break;
+                            }
+                        }
+
+                        if (!valid) break;
+                    }
+                }
+                break;
+
+            default:
+                throw new RuntimeException(
+                    "Unsupported return type: " + type
+                );
+        }
+
+        if (!valid) {
+            throw new RuntimeException(
+                "Function returned an incompatible value. Expected: " + type
+            );
+        }
+    }
+
     // ---------------- JSON SERIALIZER ----------------
 
     static String quote(String value) {
@@ -1288,15 +1767,39 @@ public class Main {
 
         for (char c : value.toCharArray()) {
             switch (c) {
-                case '"': result.append("\\\\\\""); break;
-                case '\\\\': result.append("\\\\\\\\"); break;
-                case '\\n': result.append("\\\\n"); break;
-                case '\\r': result.append("\\\\r"); break;
-                case '\\t': result.append("\\\\t"); break;
+                case '"':
+                    result.append("\\\\\\"");
+                    break;
+
+                case '\\\\':
+                    result.append("\\\\\\\\");
+                    break;
+
+                case '\\n':
+                    result.append("\\\\n");
+                    break;
+
+                case '\\r':
+                    result.append("\\\\r");
+                    break;
+
+                case '\\t':
+                    result.append("\\\\t");
+                    break;
+
+                case '\\b':
+                    result.append("\\\\b");
+                    break;
+
+                case '\\f':
+                    result.append("\\\\f");
+                    break;
 
                 default:
                     if (c < 32) {
-                        result.append(String.format("\\\\u%04x", (int)c));
+                        result.append(
+                            String.format("\\\\u%04x", (int) c)
+                        );
                     } else {
                         result.append(c);
                     }
@@ -1414,6 +1917,7 @@ public class Main {
     // ---------------- MAIN ----------------
 
     public static void main(String[] args) throws Exception {
+
         BufferedReader reader = new BufferedReader(
             new InputStreamReader(System.in)
         );
@@ -1428,6 +1932,7 @@ public class Main {
         Object parsed = new JsonParser(input.toString()).parse();
 
         List<Object> __args = new ArrayList<>();
+
         List<String> __argumentNames =
             ${argumentNames};
 
