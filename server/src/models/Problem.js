@@ -63,6 +63,20 @@ const problemSchema = new mongoose.Schema(
         message: "At least one example is required",
       },
     },
+    executionConfig: {
+  type: "function",
+  arguments: [
+    {
+      name: "nums",
+      type: "integer_array"
+    },
+    {
+      name: "target",
+      type: "integer"
+    }
+  ],
+  returnType: "integer_array"
+}
     functionName: {
       type: String,
       trim: true,

@@ -107,6 +107,136 @@ except Exception as error:
 `;
   }
 
+  if (language === "cpp") {
+  return `
+#include <bits/stdc++.h>
+using namespace std;
+
+${code}
+
+int main() {
+    string input(
+        (istreambuf_iterator<char>(cin)),
+        istreambuf_iterator<char>()
+    );
+
+    regex numsRegex("\\\\\"nums\\\\\"\\\\s*:\\\\s*\\\\[([^]]*)\\\\]");
+    regex targetRegex("\\\\\"target\\\\\"\\\\s*:\\\\s*(-?\\\\d+)");
+
+    smatch numsMatch;
+    smatch targetMatch;
+
+    if (!regex_search(input, numsMatch, numsRegex) ||
+        !regex_search(input, targetMatch, targetRegex)) {
+        cerr << "Invalid test input";
+        return 1;
+    }
+
+    vector<int> nums;
+    string numsString = numsMatch[1].str();
+
+    regex numberRegex("-?\\\\d+");
+    auto begin = sregex_iterator(
+        numsString.begin(),
+        numsString.end(),
+        numberRegex
+    );
+
+    auto end = sregex_iterator();
+
+    for (auto it = begin; it != end; ++it) {
+        nums.push_back(stoi(it->str()));
+    }
+
+    int target = stoi(targetMatch[1].str());
+
+    vector<int> result = ${functionName}(nums, target);
+
+    cout << "[";
+    for (size_t i = 0; i < result.size(); i++) {
+        if (i > 0) cout << ",";
+        cout << result[i];
+    }
+    cout << "]";
+
+    return 0;
+}
+`;
+}
+
+if (language === "java") {
+  return `
+import java.util.*;
+import java.util.regex.*;
+
+${code}
+
+public class Main {
+    public static void main(String[] args) {
+        try {
+            Scanner scanner = new Scanner(System.in);
+            StringBuilder inputBuilder = new StringBuilder();
+
+            while (scanner.hasNextLine()) {
+                inputBuilder.append(scanner.nextLine());
+            }
+
+            String input = inputBuilder.toString();
+
+            Pattern numsPattern = Pattern.compile(
+                "\\\\\"nums\\\\\"\\\\s*:\\\\s*\\\\[([^]]*)\\\\]"
+            );
+
+            Pattern targetPattern = Pattern.compile(
+                "\\\\\"target\\\\\"\\\\s*:\\\\s*(-?\\\\d+)"
+            );
+
+            Matcher numsMatcher = numsPattern.matcher(input);
+            Matcher targetMatcher = targetPattern.matcher(input);
+
+            if (!numsMatcher.find() || !targetMatcher.find()) {
+                throw new IllegalArgumentException("Invalid test input");
+            }
+
+            String numsString = numsMatcher.group(1).trim();
+
+            int[] nums;
+
+            if (numsString.isEmpty()) {
+                nums = new int[0];
+            } else {
+                String[] parts = numsString.split(",");
+                nums = new int[parts.length];
+
+                for (int i = 0; i < parts.length; i++) {
+                    nums[i] = Integer.parseInt(parts[i].trim());
+                }
+            }
+
+            int target = Integer.parseInt(targetMatcher.group(1));
+
+            Solution solution = new Solution();
+            int[] result = solution.${functionName}(nums, target);
+
+            StringBuilder output = new StringBuilder("[");
+
+            for (int i = 0; i < result.length; i++) {
+                if (i > 0) output.append(",");
+                output.append(result[i]);
+            }
+
+            output.append("]");
+            System.out.print(output.toString());
+
+        } catch (Exception error) {
+            System.err.println(error.getMessage());
+            System.exit(1);
+        }
+    }
+}
+`;
+}
+
   return code;
 };
 
