@@ -55,9 +55,13 @@ ${code}
 
     const __result = await ${functionName}(...__args);
 
-    process.stdout.write(
-        JSON.stringify(__result) ?? "null"
-    );
+    const __serialized = JSON.stringify(__result);
+
+process.stdout.write(
+    typeof __serialized === "undefined"
+        ? "null"
+        : __serialized
+);
 })().catch((error) => {
     console.error(error);
     process.exitCode = 1;
