@@ -889,6 +889,585 @@ int main() {
 `;
 };
 
+
+const buildJavaHarness = ({
+  code,
+  functionName,
+  argumentsConfig,
+  returnType,
+}) => {
+  const javaTypes = {
+    integer: "int",
+    number: "double",
+    string: "String",
+    boolean: "boolean",
+    integer_array: "int[]",
+    number_array: "double[]",
+    string_array: "String[]",
+    boolean_array: "boolean[]",
+    integer_matrix: "int[][]",
+    string_matrix: "String[][]",
+  };
+
+  const argumentNames = JSON.stringify(
+    argumentsConfig.map((argument) => argument.name)
+  );
+
+  const argumentTypes = argumentsConfig.map((argument) => {
+    const type = javaTypes[argument.type];
+
+    if (!type) {
+      throw new Error(
+        `Unsupported Java argument type: ${argument.type}`
+      );
+    }
+
+    return type;
+  });
+
+  const declarations = argumentTypes
+    .map((type, index) => {
+      return `
+      ${type} __arg${index} =
+          (${type}) convert(
+              __args.get(${index}),
+              "${argumentsConfig[index].type}"
+          );
+      `;
+    })
+    .join("\n");
+
+  const invocationArguments = argumentsConfig
+    .map((_, index) => `__arg${index}`)
+    .join(", ");
+
+  const invocation =
+    returnType === "void"
+      ? `
+      __solution.${functionName}(${invocationArguments});
+      System.out.print("null");
+      `
+      : `
+      Object __result =
+          __solution.${functionName}(${invocationArguments});
+
+      System.out.print(toJson(__result));
+      `;
+
+  return `
+import java.util.*;
+import java.io.*;
+
+${code}
+
+public class Main {
+
+    // ---------------- JSON PARSER ----------------
+
+    static class JsonParser {
+        private final String input;
+        private int pos = 0;
+
+        JsonParser(String input) {
+            this.input = input;
+        }
+
+        void skipWhitespace() {
+            while (
+                pos < input.length() &&
+                Character.isWhitespace(input.charAt(pos))
+            ) {
+                pos++;
+            }
+        }
+
+        char peek() {
+            skipWhitespace();
+            return pos < input.length()
+                ? input.charAt(pos)
+                : '\\0';
+        }
+
+        Object parse() {
+            Object value = parseValue();
+            skipWhitespace();
+
+            if (pos != input.length()) {
+                throw new RuntimeException("Unexpected JSON content");
+            }
+
+            return value;
+        }
+
+        Object parseValue() {
+            skipWhitespace();
+
+            char c = peek();
+
+            if (c == '{') return parseObject();
+            if (c == '[') return parseArray();
+            if (c == '"') return parseString();
+
+            if (c == 't') {
+                pos += 4;
+                return true;
+            }
+
+            if (c == 'f') {
+                pos += 5;
+                return false;
+            }
+
+            if (c == 'n') {
+                pos += 4;
+                return null;
+            }
+
+            if (c == '-' || Character.isDigit(c)) {
+                return parseNumber();
+            }
+
+            throw new RuntimeException("Invalid JSON value");
+        }
+
+        Map<String, Object> parseObject() {
+            Map<String, Object> result = new LinkedHashMap<>();
+
+            pos++;
+
+            if (peek() == '}') {
+                pos++;
+                return result;
+            }
+
+            while (true) {
+                String key = parseString();
+
+                skipWhitespace();
+
+                if (input.charAt(pos++) != ':') {
+                    throw new RuntimeException("Expected colon");
+                }
+
+                result.put(key, parseValue());
+
+                skipWhitespace();
+
+                char separator = input.charAt(pos++);
+
+                if (separator == '}') break;
+
+                if (separator != ',') {
+                    throw new RuntimeException("Expected comma");
+                }
+            }
+
+            return result;
+        }
+
+        List<Object> parseArray() {
+            List<Object> result = new ArrayList<>();
+
+            pos++;
+
+            if (peek() == ']') {
+                pos++;
+                return result;
+            }
+
+            while (true) {
+                result.add(parseValue());
+
+                skipWhitespace();
+
+                char separator = input.charAt(pos++);
+
+                if (separator == ']') break;
+
+                if (separator != ',') {
+                    throw new RuntimeException("Expected comma");
+                }
+            }
+
+            return result;
+        }
+
+        String parseString() {
+            if (input.charAt(pos++) != '"') {
+                throw new RuntimeException("Expected string");
+            }
+
+            StringBuilder result = new StringBuilder();
+
+            while (pos < input.length()) {
+                char c = input.charAt(pos++);
+
+                if (c == '"') return result.toString();
+
+                if (c == '\\\\') {
+                    char escaped = input.charAt(pos++);
+
+                    switch (escaped) {
+                        case '"': result.append('"'); break;
+                        case '\\\\': result.append('\\\\'); break;
+                        case '/': result.append('/'); break;
+                        case 'b': result.append('\\b'); break;
+                        case 'f': result.append('\\f'); break;
+                        case 'n': result.append('\\n'); break;
+                        case 'r': result.append('\\r'); break;
+                        case 't': result.append('\\t'); break;
+
+                        case 'u':
+                            String hex = input.substring(pos, pos + 4);
+                            result.append((char) Integer.parseInt(hex, 16));
+                            pos += 4;
+                            break;
+
+                        default:
+                            throw new RuntimeException("Invalid escape");
+                    }
+                } else {
+                    result.append(c);
+                }
+            }
+
+            throw new RuntimeException("Unterminated string");
+        }
+
+        Number parseNumber() {
+            int start = pos;
+
+            while (
+                pos < input.length() &&
+                "-+0123456789.eE".indexOf(input.charAt(pos)) >= 0
+            ) {
+                pos++;
+            }
+
+            String number = input.substring(start, pos);
+
+            return number.contains(".") ||
+                   number.contains("e") ||
+                   number.contains("E")
+                ? Double.parseDouble(number)
+                : Long.parseLong(number);
+        }
+    }
+
+    // ---------------- TYPE CONVERSION ----------------
+
+    static Object convert(Object value, String type) {
+        switch (type) {
+            case "integer":
+                if (!(value instanceof Number)) {
+                    throw new RuntimeException("Expected integer");
+                }
+
+                long integer = ((Number) value).longValue();
+
+                if (
+                    ((Number) value).doubleValue() != integer ||
+                    integer < Integer.MIN_VALUE ||
+                    integer > Integer.MAX_VALUE
+                ) {
+                    throw new RuntimeException("Invalid integer");
+                }
+
+                return (int) integer;
+
+            case "number":
+                if (!(value instanceof Number)) {
+                    throw new RuntimeException("Expected number");
+                }
+
+                return ((Number) value).doubleValue();
+
+            case "string":
+                if (!(value instanceof String)) {
+                    throw new RuntimeException("Expected string");
+                }
+
+                return value;
+
+            case "boolean":
+                if (!(value instanceof Boolean)) {
+                    throw new RuntimeException("Expected boolean");
+                }
+
+                return value;
+
+            case "integer_array": {
+                List<?> list = (List<?>) value;
+                int[] result = new int[list.size()];
+
+                for (int i = 0; i < list.size(); i++) {
+                    result[i] = (Integer) convert(
+                        list.get(i), "integer"
+                    );
+                }
+
+                return result;
+            }
+
+            case "number_array": {
+                List<?> list = (List<?>) value;
+                double[] result = new double[list.size()];
+
+                for (int i = 0; i < list.size(); i++) {
+                    result[i] = (Double) convert(
+                        list.get(i), "number"
+                    );
+                }
+
+                return result;
+            }
+
+            case "string_array": {
+                List<?> list = (List<?>) value;
+                String[] result = new String[list.size()];
+
+                for (int i = 0; i < list.size(); i++) {
+                    result[i] = (String) convert(
+                        list.get(i), "string"
+                    );
+                }
+
+                return result;
+            }
+
+            case "boolean_array": {
+                List<?> list = (List<?>) value;
+                boolean[] result = new boolean[list.size()];
+
+                for (int i = 0; i < list.size(); i++) {
+                    result[i] = (Boolean) convert(
+                        list.get(i), "boolean"
+                    );
+                }
+
+                return result;
+            }
+
+            case "integer_matrix": {
+                List<?> rows = (List<?>) value;
+                int[][] result = new int[rows.size()][];
+
+                for (int i = 0; i < rows.size(); i++) {
+                    result[i] = (int[]) convert(
+                        rows.get(i), "integer_array"
+                    );
+                }
+
+                return result;
+            }
+
+            case "string_matrix": {
+                List<?> rows = (List<?>) value;
+                String[][] result = new String[rows.size()][];
+
+                for (int i = 0; i < rows.size(); i++) {
+                    result[i] = (String[]) convert(
+                        rows.get(i), "string_array"
+                    );
+                }
+
+                return result;
+            }
+
+            default:
+                throw new RuntimeException(
+                    "Unsupported type: " + type
+                );
+        }
+    }
+
+    // ---------------- JSON SERIALIZER ----------------
+
+    static String quote(String value) {
+        StringBuilder result = new StringBuilder("\\"");
+
+        for (char c : value.toCharArray()) {
+            switch (c) {
+                case '"': result.append("\\\\\\""); break;
+                case '\\\\': result.append("\\\\\\\\"); break;
+                case '\\n': result.append("\\\\n"); break;
+                case '\\r': result.append("\\\\r"); break;
+                case '\\t': result.append("\\\\t"); break;
+
+                default:
+                    if (c < 32) {
+                        result.append(String.format("\\\\u%04x", (int)c));
+                    } else {
+                        result.append(c);
+                    }
+            }
+        }
+
+        result.append("\\"");
+        return result.toString();
+    }
+
+    static String toJson(Object value) {
+        if (value == null) return "null";
+
+        if (value instanceof String) {
+            return quote((String) value);
+        }
+
+        if (value instanceof Boolean || value instanceof Number) {
+            return value.toString();
+        }
+
+        if (value instanceof int[]) {
+            int[] array = (int[]) value;
+            StringBuilder result = new StringBuilder("[");
+
+            for (int i = 0; i < array.length; i++) {
+                if (i > 0) result.append(",");
+                result.append(array[i]);
+            }
+
+            return result.append("]").toString();
+        }
+
+        if (value instanceof double[]) {
+            double[] array = (double[]) value;
+            StringBuilder result = new StringBuilder("[");
+
+            for (int i = 0; i < array.length; i++) {
+                if (i > 0) result.append(",");
+                result.append(array[i]);
+            }
+
+            return result.append("]").toString();
+        }
+
+        if (value instanceof String[]) {
+            String[] array = (String[]) value;
+            StringBuilder result = new StringBuilder("[");
+
+            for (int i = 0; i < array.length; i++) {
+                if (i > 0) result.append(",");
+                result.append(quote(array[i]));
+            }
+
+            return result.append("]").toString();
+        }
+
+        if (value instanceof boolean[]) {
+            boolean[] array = (boolean[]) value;
+            StringBuilder result = new StringBuilder("[");
+
+            for (int i = 0; i < array.length; i++) {
+                if (i > 0) result.append(",");
+                result.append(array[i]);
+            }
+
+            return result.append("]").toString();
+        }
+
+        if (value instanceof int[][]) {
+            return arrayToJson((int[][]) value);
+        }
+
+        if (value instanceof String[][]) {
+            return arrayToJson((String[][]) value);
+        }
+
+        if (value instanceof List<?>) {
+            List<?> list = (List<?>) value;
+            StringBuilder result = new StringBuilder("[");
+
+            for (int i = 0; i < list.size(); i++) {
+                if (i > 0) result.append(",");
+                result.append(toJson(list.get(i)));
+            }
+
+            return result.append("]").toString();
+        }
+
+        throw new RuntimeException("Unsupported return value");
+    }
+
+    static String arrayToJson(int[][] values) {
+        StringBuilder result = new StringBuilder("[");
+
+        for (int i = 0; i < values.length; i++) {
+            if (i > 0) result.append(",");
+            result.append(toJson(values[i]));
+        }
+
+        return result.append("]").toString();
+    }
+
+    static String arrayToJson(String[][] values) {
+        StringBuilder result = new StringBuilder("[");
+
+        for (int i = 0; i < values.length; i++) {
+            if (i > 0) result.append(",");
+            result.append(toJson(values[i]));
+        }
+
+        return result.append("]").toString();
+    }
+
+    // ---------------- MAIN ----------------
+
+    public static void main(String[] args) throws Exception {
+        BufferedReader reader = new BufferedReader(
+            new InputStreamReader(System.in)
+        );
+
+        StringBuilder input = new StringBuilder();
+        String line;
+
+        while ((line = reader.readLine()) != null) {
+            input.append(line);
+        }
+
+        Object parsed = new JsonParser(input.toString()).parse();
+
+        List<Object> __args = new ArrayList<>();
+        List<String> __argumentNames =
+            Arrays.asList(${argumentNames});
+
+        if (parsed instanceof List<?>) {
+            __args.addAll((List<?>) parsed);
+
+        } else if (parsed instanceof Map<?, ?>) {
+            Map<?, ?> object = (Map<?, ?>) parsed;
+
+            for (String name : __argumentNames) {
+                if (!object.containsKey(name)) {
+                    throw new RuntimeException(
+                        "Missing argument: " + name
+                    );
+                }
+
+                __args.add(object.get(name));
+            }
+
+        } else {
+            throw new RuntimeException(
+                "Input must be a JSON object or array"
+            );
+        }
+
+        if (__args.size() != ${argumentsConfig.length}) {
+            throw new RuntimeException("Invalid argument count");
+        }
+
+        ${declarations}
+
+        Solution __solution = new Solution();
+
+        ${invocation}
+    }
+}
+`;
+};
+
+
 // ======================================================
 // MAIN EXECUTION CODE GENERATOR
 // ======================================================
@@ -946,6 +1525,13 @@ const buildExecutionCode = ({
         argumentsConfig,
         returnType: executionConfig.returnType,
       });
+    case "java":
+  return buildJavaHarness({
+    code,
+    functionName,
+    argumentsConfig,
+    returnType: executionConfig.returnType,
+  });
 
     default:
       throw new Error(
