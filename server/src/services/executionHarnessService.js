@@ -909,9 +909,9 @@ const buildJavaHarness = ({
     string_matrix: "String[][]",
   };
 
-  const argumentNames = JSON.stringify(
-    argumentsConfig.map((argument) => argument.name)
-  );
+  const argumentNames = `Arrays.asList(${argumentsConfig
+  .map((argument) => JSON.stringify(argument.name))
+  .join(", ")})`;
 
   const argumentTypes = argumentsConfig.map((argument) => {
     const type = javaTypes[argument.type];
@@ -1429,7 +1429,7 @@ public class Main {
 
         List<Object> __args = new ArrayList<>();
         List<String> __argumentNames =
-            Arrays.asList(${argumentNames});
+            ${argumentNames};
 
         if (parsed instanceof List<?>) {
             __args.addAll((List<?>) parsed);
