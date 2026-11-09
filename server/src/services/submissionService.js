@@ -25,6 +25,46 @@ const TERMINAL_STATUS_IDS = new Set([
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const buildExecutionCode = ({ language, code, functionName }) => {
+  // Preserve existing execution for other languages
+  // and JavaScript problems using stdin/stdout.
+  if (language !== "javascript" || !functionName) {
+    return code;
+  }
+
+  if (!/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(functionName)) {
+    throw new Error("Invalid problem function name");
+  }
+
+  return `
+console.log = () => {};
+console.info = () => {};
+console.debug = () => {};
+
+${code}
+
+// CodeCollab JavaScript test harness
+(async () => {
+    const __input = JSON.parse(
+        require("fs").readFileSync(0, "utf8")
+    );
+
+    const __args = Array.isArray(__input)
+        ? __input
+        : Object.values(__input);
+
+    const __result = await ${functionName}(...__args);
+
+    process.stdout.write(
+        JSON.stringify(__result) ?? "null"
+    );
+})().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+});
+`;
+};
+
 // submit code to judge0 and wait for its terminal result.
 
 const executeAndWait = async ({ language, code, stdin }) => {
@@ -67,13 +107,24 @@ const executeAndWait = async ({ language, code, stdin }) => {
 
 // run against test cases
 
-const evaluateTestCases = async ({ language, code, testCases }) => {
+const evaluateTestCases = async ({
+  language,
+  code,
+  testCases,
+  functionName = null,
+}) => {
   const results = [];
 
   for (const testCase of testCases) {
-    const execution = await executeAndWait({
+    const executionCode = buildExecutionCode({
       language,
       code,
+      functionName,
+    });
+
+    const execution = await executeAndWait({
+      language,
+      code: executionCode,
       stdin: testCase.input,
     });
 
@@ -97,7 +148,6 @@ const evaluateTestCases = async ({ language, code, testCases }) => {
         isHidden: testCase.isHidden,
       });
 
-      //compilation error effects every testCase
       if (statusId === 6) {
         break;
       }
@@ -136,7 +186,7 @@ const runExamples = async ({ userId, problemId, language, code }) => {
   const problem = await Problem.findOne({
     _id: problemId,
     isPublished: true,
-  }).select("_id");
+  }).select("_id functionName");
 
   if (!problem) {
     const error = new Error("Problem not found or not published");
@@ -160,6 +210,7 @@ const runExamples = async ({ userId, problemId, language, code }) => {
     language,
     code,
     testCases,
+    functionName: problem.functionName,
   });
 
   return {
@@ -204,7 +255,7 @@ const submitSolution = async ({
   const problem = await Problem.findOne({
     _id: problemId,
     isPublished: true,
-  }).select("_id");
+  }).select("_id functionName");
 
   if (!problem) {
     const error = new Error("Problem not found or not Published");
@@ -239,6 +290,7 @@ const submitSolution = async ({
       language,
       code,
       testCases,
+      functionName: problem.functionName,
     });
 
     const passedTestCases = results.filter((result) => result.passed).length;

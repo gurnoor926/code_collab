@@ -1,102 +1,113 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
-const exampleSchema = new mongoose.Schema({
-    input : {
-        type : String, 
-        required : true,
+const exampleSchema = new mongoose.Schema(
+  {
+    input: {
+      type: String,
+      required: true,
     },
 
-    output :{
-        type : String,
-        required : true, 
+    output: {
+      type: String,
+      required: true,
     },
-    
-    explanation : {
-        type : String,
-        default : "",
-    },
-},
-{_id:false}
-)
 
-const problemSchema = new mongoose.Schema({
-    title:{
-        type: String,
-        required: true
+    explanation: {
+      type: String,
+      default: "",
     },
-    slug:{
-        type: String,
-        required: true,
-        unique: true,
-        lowercase:true,
-        trim:true,
-    },
-    description:{
-        type: String,
-        required: true
-    },
-    difficulty:{
-        type: String,
-        enum:["Easy" , "Medium", "Hard"],
-        required: true
-    },
-    category:{
-        type: String,
-        required: true,
-        trim : true
-    },
-    tags :{
-        type : [String],
-        default : []
-    }, 
+  },
+  { _id: false },
+);
 
-    constraints:{
-        type: [String],
-        required: true
+const problemSchema = new mongoose.Schema(
+  {
+    title: {
+      type: String,
+      required: true,
     },
-     examples: {
+    slug: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+    },
+    description: {
+      type: String,
+      required: true,
+    },
+    difficulty: {
+      type: String,
+      enum: ["Easy", "Medium", "Hard"],
+      required: true,
+    },
+    category: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    tags: {
+      type: [String],
+      default: [],
+    },
+
+    constraints: {
+      type: [String],
+      required: true,
+    },
+    examples: {
       type: [exampleSchema],
       validate: {
         validator: (examples) => examples.length > 0,
         message: "At least one example is required",
       },
     },
-    starterCode:{
-        type: Map,
-        of: String,
-        default : {},
+    functionName: {
+      type: String,
+      trim: true,
+      match: [/^[a-zA-Z_$][a-zA-Z0-9_$]*$/, "Invalid function name"],
+      default: null,
     },
-    supportedLanguages:[{
+    starterCode: {
+      type: Map,
+      of: String,
+      default: {},
+    },
+    supportedLanguages: [
+      {
         type: String,
         default: ["javascript", "python", "java", "cpp"],
-    }],
-    timeLimit:{
-        type: Number,
-        default: 2,
-        min: 1,
+      },
+    ],
+    timeLimit: {
+      type: Number,
+      default: 2,
+      min: 1,
     },
-    memoryLimit:{
-        type: Number,
-        default :  256 ,
-        min : 16
-    },
-
-    isPublished : {
-        type : Boolean,
-        default: false
+    memoryLimit: {
+      type: Number,
+      default: 256,
+      min: 16,
     },
 
-    createdBy:{
-        type: mongoose.Schema.Types.ObjectId,
-        ref : "User",
-        required:"true"
+    isPublished: {
+      type: Boolean,
+      default: false,
     },
-},
- {
+
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: "true",
+    },
+  },
+  {
     timestamps: true,
- });
+  },
+);
 
- problemSchema.index({
+problemSchema.index({
   title: "text",
   description: "text",
 });
@@ -107,4 +118,4 @@ problemSchema.index({
   isPublished: 1,
 });
 
- module.exports = mongoose.model("Problem", problemSchema);
+module.exports = mongoose.model("Problem", problemSchema);

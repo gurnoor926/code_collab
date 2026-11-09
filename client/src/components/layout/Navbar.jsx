@@ -40,6 +40,11 @@ function Navbar() {
       path: "/dashboard",
       icon: LayoutDashboard,
     },
+    {
+      label:"Problems",
+      path:"/problems",
+      icon: Code2,
+    }
   ];
 
   return (
