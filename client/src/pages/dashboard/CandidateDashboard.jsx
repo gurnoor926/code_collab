@@ -1,4 +1,3 @@
-
 import {
   Code2,
   Trophy,
@@ -11,10 +10,96 @@ import {
 import { useAuth } from "../../hooks/useAuth";
 import UserAvatar from "../../components/common/UserAvatar";
 import AppLayout from "../../components/layout/AppLayout";
-import toast from "react-hot-toast";
+import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import submissionService from "../../services/submissionService";
+import interviewService from "../../services/interviewService";
 
 function CandidateDashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const [stats, setStats] = useState({
+    problemsSolved: 0,
+    totalSubmissions: 0,
+    interviews: 0,
+    practiceTime: null,
+  });
+
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadDashboardStats = async () => {
+      try {
+        setStatsLoading(true);
+
+        // First submission page gives us the total page count.
+        const firstPage = await submissionService.getMySubmissions({
+          page: 1,
+          limit: 50,
+        });
+
+        const submissionData = firstPage?.data;
+        const pagination = submissionData?.pagination;
+
+        const allSubmissions = [...(submissionData?.submissions || [])];
+
+        // Fetch remaining pages if the user has more than 50 submissions.
+        if (pagination?.totalPages > 1) {
+          const remainingPages = await Promise.all(
+            Array.from({ length: pagination.totalPages - 1 }, (_, index) =>
+              submissionService.getMySubmissions({
+                page: index + 2,
+                limit: 50,
+              }),
+            ),
+          );
+
+          remainingPages.forEach((page) => {
+            allSubmissions.push(...(page?.data?.submissions || []));
+          });
+        }
+
+        // Count unique problems with at least one accepted submission.
+        const solvedProblemIds = new Set(
+          allSubmissions
+            .filter(
+              (submission) =>
+                submission.status === "Accepted" && submission.problem?._id,
+            )
+            .map((submission) => submission.problem._id),
+        );
+
+        // Interview endpoint returns pagination at the top level.
+        const interviewResponse = await interviewService.getMyInterviews({
+          page: 1,
+          limit: 50,
+        });
+
+        if (!active) return;
+
+        setStats({
+          problemsSolved: solvedProblemIds.size,
+          totalSubmissions: pagination?.total ?? 0,
+          interviews: interviewResponse?.pagination?.total ?? 0,
+          practiceTime: null,
+        });
+      } catch (error) {
+        console.error("Dashboard statistics error:", error);
+      } finally {
+        if (active) {
+          setStatsLoading(false);
+        }
+      }
+    };
+
+    loadDashboardStats();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const quickActions = [
     {
@@ -43,7 +128,6 @@ function CandidateDashboard() {
   return (
     <AppLayout>
       <div className="space-y-8">
-
         {/* Welcome */}
         <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-indigo-500/15 via-[#18181f] to-[#18181f] p-6 sm:p-8">
           <div className="absolute -right-16 -top-20 h-64 w-64 rounded-full bg-indigo-500/10 blur-3xl" />
@@ -70,21 +154,23 @@ function CandidateDashboard() {
 
         {/* Stats */}
         <section>
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold text-white">
-              Your Progress
-            </h2>
-            <p className="mt-1 text-sm text-zinc-500">
-              Your statistics will appear here once connected to your account data.
-            </p>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {[
-              { label: "Problems Solved", icon: Code2 },
-              { label: "Total Submissions", icon: Target },
-              { label: "Interviews", icon: Video },
-              { label: "Practice Time", icon: Clock3 },
+              {
+                label: "Problems Solved",
+                icon: Code2,
+                value: stats.problemsSolved,
+              },
+              {
+                label: "Total Submissions",
+                icon: Target,
+                value: stats.totalSubmissions,
+              },
+              {
+                label: "Interviews",
+                icon: Video,
+                value: stats.interviews,
+              },
             ].map((item) => {
               const Icon = item.icon;
 
@@ -98,8 +184,14 @@ function CandidateDashboard() {
                     <Icon size={19} className="text-indigo-400" />
                   </div>
 
-                  <p className="mt-4 text-sm font-medium text-zinc-500">
-                    Data not connected yet
+                  <p className="mt-4 text-xl font-semibold text-white">
+                    {statsLoading ? (
+                      <span className="animate-pulse text-sm text-zinc-500">
+                        Loading...
+                      </span>
+                    ) : (
+                      item.value
+                    )}
                   </p>
                 </div>
               );
@@ -110,9 +202,7 @@ function CandidateDashboard() {
         {/* Quick Actions */}
         <section>
           <div className="mb-4">
-            <h2 className="text-lg font-semibold text-white">
-              Quick Access
-            </h2>
+            <h2 className="text-lg font-semibold text-white">Quick Access</h2>
             <p className="mt-1 text-sm text-zinc-500">
               Jump into your coding workspace.
             </p>
@@ -126,11 +216,21 @@ function CandidateDashboard() {
                 <button
                   key={action.title}
                   type="button"
-                  onClick={() => toast(`${action.title} will be connected soon.`)}
+                  onClick={() => {
+                    if (action.title === "Practice Problems") {
+                      navigate("/problems");
+                    } else if (action.title === "My Submissions") {
+                      navigate("/submissions");
+                    } else if (action.title === "My Interviews") {
+                      navigate("/interviews");
+                    }
+                  }}
                   className="group rounded-xl border border-white/10 bg-[#18181f] p-5 text-left transition hover:-translate-y-1 hover:border-indigo-500/40 hover:bg-[#1d1d27]"
                 >
                   <div className="flex items-center justify-between">
-                    <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${action.bg} ${action.color}`}>
+                    <div
+                      className={`flex h-11 w-11 items-center justify-center rounded-xl ${action.bg} ${action.color}`}
+                    >
                       <Icon size={21} />
                     </div>
 

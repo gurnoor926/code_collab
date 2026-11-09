@@ -9,6 +9,8 @@ import Dashboard from "./pages/dashboard/Dashboard";
 import Unauthorized from "./pages/Unauthorized";
 import ProblemLibrary from "./pages/problems/ProblemLibrary";
 import ProblemDetail from "./pages/problems/ProblemDetail";
+import SubmissionHistory from "./pages/submissions/SubmissionHistory";
+import SubmissionDetail from "./pages/submissions/SubmissionDetail";
 
 function App() {
   return (
@@ -24,6 +26,8 @@ function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/problems/:id" element={<ProblemDetail />} />
         <Route path="/problems" element={<ProblemLibrary />} />
+          <Route path="/submissions/:id" element={<SubmissionDetail />} />
+        <Route path="/submissions" element={<SubmissionHistory />} />
       </Route>
 
       {/* Example role-protected routes */}
