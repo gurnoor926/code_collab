@@ -10,6 +10,8 @@ import {
   Menu,
   X,
   UserRound,
+  Video,
+  Users,
 } from "lucide-react";
 
 import { useAuth } from "../../hooks/useAuth";
@@ -44,7 +46,19 @@ function Navbar() {
       label:"Problems",
       path:"/problems",
       icon: Code2,
-    }
+    },
+    {
+      label: "Interviews",
+      path: "/interviews",
+      icon: Video,
+    },
+    ...(user?.role === "candidate" ? [
+      {
+        label: "Join Interview",
+        path: "/interviews/join",
+        icon: Users,
+      }
+    ]:[])
   ];
 
   return (

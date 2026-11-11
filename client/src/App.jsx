@@ -11,6 +11,10 @@ import ProblemLibrary from "./pages/problems/ProblemLibrary";
 import ProblemDetail from "./pages/problems/ProblemDetail";
 import SubmissionHistory from "./pages/submissions/SubmissionHistory";
 import SubmissionDetail from "./pages/submissions/SubmissionDetail";
+import InterviewDashboard from "./pages/interviews/InterviewDashboard";
+import CreateInterview from "./pages/interviews/CreateInterview";
+import JoinInterview from "./pages/interviews/JoinInterview";
+import InterviewDetails from "./pages/interviews/InterviewDetails";
 
 function App() {
   return (
@@ -26,8 +30,10 @@ function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/problems/:id" element={<ProblemDetail />} />
         <Route path="/problems" element={<ProblemLibrary />} />
-          <Route path="/submissions/:id" element={<SubmissionDetail />} />
+        <Route path="/submissions/:id" element={<SubmissionDetail />} />
         <Route path="/submissions" element={<SubmissionHistory />} />
+        <Route path="/interviews" element={<InterviewDashboard />} />
+        <Route path="/interviews/:id" element={<InterviewDetails />} />
       </Route>
 
       {/* Example role-protected routes */}
@@ -51,6 +57,10 @@ function App() {
             </div>
           }
         />
+        <Route path="/interviews/create" element={<CreateInterview />} />
+      </Route>
+      <Route element={<ProtectedRoute allowedRoles={["candidate"]} />}>
+        <Route path="/interviews/join" element={<JoinInterview />} />
       </Route>
 
       <Route path="/unauthorized" element={<Unauthorized />} />
