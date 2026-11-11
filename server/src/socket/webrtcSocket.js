@@ -225,6 +225,53 @@ const registerWebRTCHandlers = (io, socket) => {
         });
     });
 
+    socket.on("webrtc:camera-state", (payload = {}, ack) => {
+    const { peerId, cameraEnabled } = payload;
+
+    const interviewId = socketRooms.get(socket.id);
+
+    if (!interviewId) {
+        return ack?.({
+            success: false,
+            message: "Join a WebRTC room first",
+        });
+    }
+
+    if (
+        typeof peerId !== "string" ||
+        typeof cameraEnabled !== "boolean"
+    ) {
+        return ack?.({
+            success: false,
+            message: "Invalid camera state payload",
+        });
+    }
+
+    const peers = roomPeers.get(interviewId);
+
+    if (
+        !peers ||
+        !peers.has(socket.id) ||
+        !peers.has(peerId) ||
+        peerId === socket.id
+    ) {
+        return ack?.({
+            success: false,
+            message: "Target peer is not in your interview room",
+        });
+    }
+
+    io.to(peerId).emit("webrtc:camera-state", {
+        peerId: socket.id,
+        cameraEnabled,
+    });
+
+    ack?.({
+        success: true,
+        message: "Camera state synchronized",
+    });
+});
+
     socket.on("webrtc:leave", () => {
         leaveWebRTCRoom(socket);
     });
