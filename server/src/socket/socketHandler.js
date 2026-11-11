@@ -82,6 +82,13 @@ const initializeSocket = (io) => {
     //console.log(`Socket connected: ${socket.id} , user: ${socket.user.userId}`);
     // Join the authenticated user's private notification room.
     socket.data.userId = socket.user.userId;
+    socket.data.user = {
+  userId: socket.user.userId,
+  name: socket.user.name,
+  email: socket.user.email,
+  role: socket.user.role,
+  avatar: socket.user.avatar,
+};
     const userRoom = `user:${socket.user.userId}`;
 
     socket.join(userRoom);
@@ -142,13 +149,29 @@ const initializeSocket = (io) => {
         // Check whether this user already has another socket in this room.
         // This prevents duplicate notifications from React Strict Mode
         // and multiple connections belonging to the same user.
-        const roomSockets = await io.in(roomName).fetchSockets();
+       const roomSockets = await io.in(roomName).fetchSockets();
 
-        const userAlreadyInRoom = roomSockets.some(
-          (roomSocket) => String(roomSocket.data.userId) === String(userId),
-        );
+const userAlreadyInRoom = roomSockets.some(
+  (roomSocket) => String(roomSocket.data.userId) === String(userId),
+);
 
-        await socket.join(roomName);
+// Build an initial participant snapshot for the joining client.
+const existingParticipants = [
+  ...new Map(
+    roomSockets
+      .filter(
+        (roomSocket) =>
+          String(roomSocket.data.userId) !== String(userId)
+      )
+      .filter((roomSocket) => roomSocket.data.user)
+      .map((roomSocket) => [
+        String(roomSocket.data.userId),
+        roomSocket.data.user,
+      ])
+  ).values(),
+];
+
+await socket.join(roomName);
 
         if (!userAlreadyInRoom) {
           // Notify existing interview participants about the new arrival.
@@ -201,6 +224,7 @@ const initializeSocket = (io) => {
             message: "Joined interview successfully",
             interviewId,
             status: interview.status,
+            participants: existingParticipants,
           });
         }
       } catch (error) {
