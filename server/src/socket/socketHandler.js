@@ -83,12 +83,12 @@ const initializeSocket = (io) => {
     // Join the authenticated user's private notification room.
     socket.data.userId = socket.user.userId;
     socket.data.user = {
-  userId: socket.user.userId,
-  name: socket.user.name,
-  email: socket.user.email,
-  role: socket.user.role,
-  avatar: socket.user.avatar,
-};
+      userId: socket.user.userId,
+      name: socket.user.name,
+      email: socket.user.email,
+      role: socket.user.role,
+      avatar: socket.user.avatar,
+    };
     const userRoom = `user:${socket.user.userId}`;
 
     socket.join(userRoom);
@@ -149,36 +149,46 @@ const initializeSocket = (io) => {
         // Check whether this user already has another socket in this room.
         // This prevents duplicate notifications from React Strict Mode
         // and multiple connections belonging to the same user.
-       const roomSockets = await io.in(roomName).fetchSockets();
+        const roomSockets = await io.in(roomName).fetchSockets();
 
-const userAlreadyInRoom = roomSockets.some(
-  (roomSocket) => String(roomSocket.data.userId) === String(userId),
-);
+        const userAlreadyInRoom = roomSockets.some(
+          (roomSocket) => String(roomSocket.data.userId) === String(userId),
+        );
 
-// Build an initial participant snapshot for the joining client.
-const existingParticipants = [
-  ...new Map(
-    roomSockets
-      .filter(
-        (roomSocket) =>
-          String(roomSocket.data.userId) !== String(userId)
-      )
-      .filter((roomSocket) => roomSocket.data.user)
-      .map((roomSocket) => [
-        String(roomSocket.data.userId),
-        roomSocket.data.user,
-      ])
-  ).values(),
-];
+        // Build an initial participant snapshot for the joining client.
+        const existingParticipants = [
+          ...new Map(
+            roomSockets
+              .filter(
+                (roomSocket) =>
+                  String(roomSocket.data.userId) !== String(userId),
+              )
+              .filter((roomSocket) => roomSocket.data.user)
+              .map((roomSocket) => [
+                String(roomSocket.data.userId),
+                roomSocket.data.user,
+              ]),
+          ).values(),
+        ];
 
-await socket.join(roomName);
+        await socket.join(roomName);
 
+        socket.to(roomName).emit("presence:user-joined", {
+          user: {
+            userId: socket.user.userId,
+            name: socket.user.name,
+            email: socket.user.email,
+            role: socket.user.role,
+            avatar: socket.user.avatar,
+          },
+        });
         if (!userAlreadyInRoom) {
           // Notify existing interview participants about the new arrival.
           socket.to(roomName).emit("presence:user-joined", {
             user: {
               userId: socket.user.userId,
               name: socket.user.name,
+              email: socket.user.email,
               role: socket.user.role,
             },
           });
@@ -236,18 +246,35 @@ await socket.join(roomName);
 
     //disconnect
 
-    socket.on("disconnecting", () => {
-      for (const room of socket.rooms) {
-        if (room.startsWith(ROOM_PREFIX)) {
-          socket.to(room).emit("presence:user-left", {
-            user: {
-              userId: socket.user.userId,
-              name: socket.user.name,
-            },
-          });
-        }
+   socket.on("disconnecting", async () => {
+  for (const room of socket.rooms) {
+    if (!room.startsWith(ROOM_PREFIX)) continue;
+
+    try {
+      // Check whether another socket for this user remains in the room.
+      const roomSockets = await io.in(room).fetchSockets();
+
+      const anotherSocketExists = roomSockets.some(
+        (roomSocket) =>
+          roomSocket.id !== socket.id &&
+          String(roomSocket.data.userId) ===
+            String(socket.user.userId)
+      );
+
+      // Only mark offline when the user's last socket leaves.
+      if (!anotherSocketExists) {
+        socket.to(room).emit("presence:user-left", {
+          user: {
+            userId: socket.user.userId,
+            name: socket.user.name,
+          },
+        });
       }
-    });
+    } catch (error) {
+      console.error("Presence disconnect error:", error.message);
+    }
+  }
+});
 
     socket.on("disconnect", (reason) => {
       console.log(`Socket disconnected: ${socket.id}, reason: ${reason}`);
