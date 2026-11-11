@@ -18,14 +18,15 @@ const notificationSchema = new mongoose.Schema(
     type: {
       type: String,
       enum: [
-        "interview_scheduled",
-        "interview_updated",
-        "interview_cancelled",
-        "interview_started",
-        "interview_completed",
-        "evaluation_published",
-        "system",
-      ],
+    "interview_scheduled",
+    "interview_updated",
+    "interview_cancelled",
+    "interview_started",
+    "interview_completed",
+    "interview_joined",
+    "evaluation_published",
+    "system",
+  ],
       required: true,
     },
 

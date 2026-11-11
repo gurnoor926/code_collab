@@ -1,6 +1,7 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const InterviewSession = require("../models/InterviewSession");
+const Notification = require("../models/Notification");
 const { isValidObjectId } = require("mongoose");
 const registerwebRTCHandlers = require("./webrtcSocket");
 
@@ -38,7 +39,7 @@ const initializeSocket = (io) => {
         return next(new Error("Socket authentication is not configured"));
       }
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET,{
+      const decoded = jwt.verify(token, process.env.JWT_SECRET, {
         algorithms: ["HS256"],
       });
 
@@ -80,6 +81,7 @@ const initializeSocket = (io) => {
   io.on("connection", (socket) => {
     //console.log(`Socket connected: ${socket.id} , user: ${socket.user.userId}`);
     // Join the authenticated user's private notification room.
+    socket.data.userId = socket.user.userId;
     const userRoom = `user:${socket.user.userId}`;
 
     socket.join(userRoom);
@@ -137,21 +139,60 @@ const initializeSocket = (io) => {
 
           return;
         }
+        // Check whether this user already has another socket in this room.
+        // This prevents duplicate notifications from React Strict Mode
+        // and multiple connections belonging to the same user.
+        const roomSockets = await io.in(roomName).fetchSockets();
+
+        const userAlreadyInRoom = roomSockets.some(
+          (roomSocket) => String(roomSocket.data.userId) === String(userId),
+        );
 
         await socket.join(roomName);
+
+        if (!userAlreadyInRoom) {
+          // Notify existing interview participants about the new arrival.
+          socket.to(roomName).emit("presence:user-joined", {
+            user: {
+              userId: socket.user.userId,
+              name: socket.user.name,
+              role: socket.user.role,
+            },
+          });
+
+          // Determine the notification recipient.
+          let recipientId = null;
+
+          if (isInterviewer && interview.candidate) {
+            recipientId = interview.candidate.toString();
+          } else if (isCandidate) {
+            recipientId = interview.interviewer.toString();
+          }
+
+          // Create and deliver a persistent notification.
+          if (recipientId && recipientId !== userId) {
+            const notification = await Notification.create({
+              recipient: recipientId,
+              sender: userId,
+              type: "interview_joined",
+              title: "Participant joined",
+              message: `${socket.user.name} joined the interview "${interview.title}".`,
+              relatedInterview: interview._id,
+              metadata: {
+                interviewId: interview._id.toString(),
+                participantRole: socket.user.role,
+              },
+            });
+
+            // Deliver to the recipient's private notification room.
+            io.to(`user:${recipientId}`).emit("notification:new", notification);
+          }
+        }
 
         socket.emit("interview:joined", {
           interviewId,
           title: interview.title,
           status: interview.status,
-        });
-
-        socket.to(roomName).emit("presence:user-joined", {
-          user: {
-            userId: socket.user.userId,
-            name: socket.user.name,
-            role: socket.user.role,
-          },
         });
 
         if (typeof ack === "function") {
