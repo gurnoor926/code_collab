@@ -1,6 +1,7 @@
 const Submission = require("../models/Submission");
 const TestCase = require("../models/TestCase");
 const Problem = require("../models/Problem");
+const InterviewSession = require("../models/InterviewSession");
 const validateExecutionInput = require("../utils/validateExecutionInput");
 const {
   buildExecutionCode,
@@ -230,6 +231,52 @@ const runExamples = async ({ userId, problemId, language, code }) => {
   };
 };
 
+const validateInterviewSubmission = async ({
+  interviewId,
+  userId,
+  problemId,
+}) => {
+  const interview = await InterviewSession.findById(interviewId)
+    .select("candidate problems status");
+
+  if (!interview) {
+    throw new Error("Interview not found.");
+  }
+
+  if (
+    !interview.candidate ||
+    interview.candidate.toString() !== userId.toString()
+  ) {
+    const error = new Error(
+      "You are not authorized to submit code for this interview."
+    );
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (interview.status !== "active") {
+    const error = new Error(
+      "Code submissions are only allowed during an active interview."
+    );
+    error.statusCode = 409;
+    throw error;
+  }
+
+  const isAssignedProblem = interview.problems.some(
+    (problem) => problem.toString() === problemId.toString()
+  );
+
+  if (!isAssignedProblem) {
+    const error = new Error(
+      "This problem is not assigned to the interview."
+    );
+    error.statusCode = 403;
+    throw error;
+  }
+
+  return interview;
+};
+
 // save a formal submission and evaluate it
 
 const submitSolution = async ({
@@ -239,6 +286,14 @@ const submitSolution = async ({
   code,
   interviewId = null,
 }) => {
+  if (interviewId) {
+  await validateInterviewSubmission({
+    interviewId,
+    userId,
+    problemId,
+  });
+}
+
   if (!LANGUAGE_ALLOWEDLIST.has(language)) {
     const error = new Error("Unsupported programming language");
     error.statusCode = 400;
