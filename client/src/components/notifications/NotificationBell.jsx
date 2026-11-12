@@ -36,6 +36,9 @@ function getNotificationIcon(type) {
     case "system":
       return Info;
 
+    case "interview_joined":
+  return Video;
+
     default:
       return MessageSquare;
   }
@@ -107,41 +110,47 @@ function NotificationBell() {
   };
 }, [fetchUnreadCount]);
   // Real-time notifications
-  useEffect(() => {
-    const token = localStorage.getItem("token");
+  
+// Real-time notifications
+useEffect(() => {
+  const token = localStorage.getItem("token");
 
-    if (!token || !SOCKET_URL) return;
+  if (!token || !SOCKET_URL) return;
 
-    const socket = io(SOCKET_URL, {
-      auth: { token },
-      transports: ["websocket", "polling"],
+  const socket = io(SOCKET_URL, {
+    auth: { token },
+    reconnection: true,
+    reconnectionAttempts: 5,
+    reconnectionDelay: 1000,
+  });
+
+  const handleNewNotification = (notification) => {
+    console.log("New notification received:", notification);
+
+    setUnreadCount((count) => count + 1);
+
+    setNotifications((current) => {
+      const exists = current.some(
+        (item) => item._id === notification._id
+      );
+
+      if (exists) return current;
+
+      return [notification, ...current].slice(0, 8);
     });
 
-    socket.on("notification:new", (notification) => {
-      setUnreadCount((count) => count + 1);
-
-      toast(notification.title || "You have a new notification", {
-        icon: "🔔",
-      });
-
-      if (open) {
-        setNotifications((current) => [
-          notification,
-          ...current.filter(
-            (item) => item._id !== notification._id
-          ),
-        ].slice(0, 8));
-      }
+    toast(notification.title || "New notification", {
+      icon: "🔔",
     });
+  };
 
-    socket.on("connect_error", (error) => {
-      console.error("Notification socket connection failed:", error.message);
-    });
+  socket.on("notification:new", handleNewNotification);
 
-    return () => {
-      socket.disconnect();
-    };
-  }, [open]);
+  return () => {
+    socket.off("notification:new", handleNewNotification);
+    socket.disconnect();
+  };
+}, []);
 
   const handleOpen = () => {
     const nextOpen = !open;

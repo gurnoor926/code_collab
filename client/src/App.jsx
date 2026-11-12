@@ -15,6 +15,7 @@ import InterviewDashboard from "./pages/interviews/InterviewDashboard";
 import CreateInterview from "./pages/interviews/CreateInterview";
 import JoinInterview from "./pages/interviews/JoinInterview";
 import InterviewDetails from "./pages/interviews/InterviewDetails";
+import InterviewRoom from "./pages/interviews/InterviewRoom";
 
 function App() {
   return (
@@ -34,6 +35,7 @@ function App() {
         <Route path="/submissions" element={<SubmissionHistory />} />
         <Route path="/interviews" element={<InterviewDashboard />} />
         <Route path="/interviews/:id" element={<InterviewDetails />} />
+        <Route path="/interviews/:id/room" element={<InterviewRoom />} />
       </Route>
 
       {/* Example role-protected routes */}
