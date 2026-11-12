@@ -272,6 +272,56 @@ const registerWebRTCHandlers = (io, socket) => {
     });
 });
 
+
+    // Synchronize microphone state with the other participant
+    socket.on("webrtc:mic-state", (payload = {}, ack) => {
+        const { peerId, micEnabled } = payload;
+
+        const interviewId = socketRooms.get(socket.id);
+
+        if (!interviewId) {
+            return ack?.({
+                success: false,
+                message: "Join a WebRTC room first",
+            });
+        }
+
+        if (
+            typeof peerId !== "string" ||
+            typeof micEnabled !== "boolean"
+        ) {
+            return ack?.({
+                success: false,
+                message: "Invalid microphone state payload",
+            });
+        }
+
+        const peers = roomPeers.get(interviewId);
+
+        if (
+            !peers ||
+            !peers.has(socket.id) ||
+            !peers.has(peerId) ||
+            peerId === socket.id
+        ) {
+            return ack?.({
+                success: false,
+                message: "Target peer is not in your interview room",
+            });
+        }
+
+        io.to(peerId).emit("webrtc:mic-state", {
+            peerId: socket.id,
+            micEnabled,
+        });
+
+        ack?.({
+            success: true,
+            message: "Microphone state synchronized",
+        });
+    });
+
+
     socket.on("webrtc:leave", () => {
         leaveWebRTCRoom(socket);
     });
