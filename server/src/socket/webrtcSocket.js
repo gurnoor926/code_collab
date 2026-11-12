@@ -1,3 +1,4 @@
+
 const mongoose = require("mongoose");
 const InterviewSession = require("../models/InterviewSession");
 
@@ -10,11 +11,17 @@ const roomPeers = new Map();
 
 const getRoomName = (interviewId) => `webrtc:${interviewId}`;
 
-const emitError = (socket, message) => {
-  socket.emit("webrtc:error", {
+const emitError = (socket, message, ack) => {
+  const response = {
     success: false,
     message,
-  });
+  };
+
+  if (typeof ack === "function") {
+    ack(response);
+  }
+
+  socket.emit("webrtc:error", response);
 };
 
 const isValidInterviewId = (id) =>
@@ -35,9 +42,7 @@ const isValidCandidate = (candidate) =>
   candidate.candidate.length <= MAX_CANDIDATE_LENGTH;
 
 const canAccessInterview = (interview, user) => {
-  if (!interview || !user) {
-    return false;
-  }
+  if (!interview || !user) return false;
 
   const userId = String(user.userId);
 
@@ -48,36 +53,64 @@ const canAccessInterview = (interview, user) => {
   );
 };
 
+const getExistingPeers = (peers, currentSocketId) => {
+  return Array.from(peers?.values() || [])
+    .filter((peer) => peer.socketId !== currentSocketId)
+    .map((peer) => ({
+      peerId: peer.socketId,
+      userId: peer.userId,
+      name: peer.name,
+      cameraEnabled: peer.cameraEnabled,
+      micEnabled: peer.micEnabled,
+    }));
+};
+
 const registerWebRTCHandlers = (io, socket) => {
   socket.on("webrtc:join", async (payload = {}, ack) => {
     try {
-      const { interviewId, cameraEnabled = true, micEnabled = true } = payload;
+      const {
+        interviewId,
+        cameraEnabled = true,
+        micEnabled = true,
+      } = payload;
 
       if (!isValidInterviewId(interviewId)) {
-        return emitError(socket, "Invalid interview ID");
+        return emitError(socket, "Invalid interview ID", ack);
       }
+
       if (
         typeof cameraEnabled !== "boolean" ||
         typeof micEnabled !== "boolean"
       ) {
-        return emitError(socket, "Invalid initial media state");
+        return emitError(socket, "Invalid initial media state", ack);
       }
 
       const currentRoom = socketRooms.get(socket.id);
 
+      // Rejoining the same room must return the existing peer list.
       if (currentRoom) {
         if (currentRoom === interviewId) {
+          const peers = roomPeers.get(interviewId);
+
+          const response = {
+            success: true,
+            message: "Already joined WebRTC room",
+            interviewId,
+            peers: getExistingPeers(peers, socket.id),
+          };
+
           if (typeof ack === "function") {
-            return ack({
-              success: true,
-              message: "Already joined WebRTC room",
-            });
+            return ack(response);
           }
 
-          return;
+          return socket.emit("webrtc:joined", response);
         }
 
-        return emitError(socket, "Leave the current WebRTC room first");
+        return emitError(
+          socket,
+          "Leave the current WebRTC room first",
+          ack,
+        );
       }
 
       const interview = await InterviewSession.findById(interviewId)
@@ -85,37 +118,40 @@ const registerWebRTCHandlers = (io, socket) => {
         .lean();
 
       if (!interview) {
-        return emitError(socket, "Interview not found");
+        return emitError(socket, "Interview not found", ack);
       }
 
       if (!canAccessInterview(interview, socket.user)) {
-        return emitError(socket, "You are not authorized for this interview");
+        return emitError(
+          socket,
+          "You are not authorized for this interview",
+          ack,
+        );
       }
 
       if (!["waiting", "active"].includes(interview.status)) {
-        return emitError(socket, "This interview is not open for WebRTC");
+        return emitError(
+          socket,
+          "This interview is not open for WebRTC",
+          ack,
+        );
       }
 
-      // Only the assigned interviewer and candidate participate
-      // in the audio/video call. Admins can manage interviews but
-      // cannot occupy a media participant slot.
       const userId = String(socket.user.userId);
-
       const isInterviewer = String(interview.interviewer) === userId;
-
       const isCandidate = String(interview.candidate || "") === userId;
 
       if (!isInterviewer && !isCandidate) {
         return emitError(
           socket,
           "Only the interviewer and assigned candidate can join the call",
+          ack,
         );
       }
 
       const peers = roomPeers.get(interviewId) || new Map();
 
-      // Prevent two simultaneous connections for the same user
-      // from occupying both participant slots.
+      // Prevent one user from occupying both participant slots.
       const alreadyConnected = Array.from(peers.values()).some(
         (peer) => peer.userId === userId,
       );
@@ -124,6 +160,7 @@ const registerWebRTCHandlers = (io, socket) => {
         return emitError(
           socket,
           "This user already has a connection in the interview call",
+          ack,
         );
       }
 
@@ -131,25 +168,21 @@ const registerWebRTCHandlers = (io, socket) => {
         return emitError(
           socket,
           "The interview call already has two participants",
+          ack,
         );
       }
 
       const roomName = getRoomName(interviewId);
 
-      const existingPeers = Array.from(peers.values()).map((peer) => ({
-        peerId: peer.socketId,
-        userId: peer.userId,
-        name: peer.name,
-        cameraEnabled: peer.cameraEnabled,
-        micEnabled: peer.micEnabled,
-      }));
+      // Capture existing peers before adding the joining socket.
+      const existingPeers = getExistingPeers(peers, socket.id);
 
       const peer = {
         socketId: socket.id,
         userId,
         name: socket.user.name,
-         cameraEnabled,
-    micEnabled,
+        cameraEnabled,
+        micEnabled,
       };
 
       await socket.join(roomName);
@@ -178,12 +211,12 @@ const registerWebRTCHandlers = (io, socket) => {
         userId: peer.userId,
         name: peer.name,
         cameraEnabled: peer.cameraEnabled,
-    micEnabled: peer.micEnabled,
+        micEnabled: peer.micEnabled,
       });
     } catch (error) {
-      console.error("WebRTC join error:", error.message);
+      console.error("WebRTC join error:", error);
 
-      emitError(socket, "Failed to join WebRTC room");
+      emitError(socket, "Failed to join WebRTC room", ack);
     }
   });
 
@@ -220,118 +253,111 @@ const registerWebRTCHandlers = (io, socket) => {
     });
   });
 
- socket.on("webrtc:camera-state", (payload = {}, ack) => {
+  socket.on("webrtc:camera-state", (payload = {}, ack) => {
     const { peerId, cameraEnabled } = payload;
-
     const interviewId = socketRooms.get(socket.id);
 
     if (!interviewId) {
-        return ack?.({
-            success: false,
-            message: "Join a WebRTC room first",
-        });
+      return ack?.({
+        success: false,
+        message: "Join a WebRTC room first",
+      });
     }
 
     if (typeof cameraEnabled !== "boolean") {
-        return ack?.({
-            success: false,
-            message: "Invalid camera state payload",
-        });
+      return ack?.({
+        success: false,
+        message: "Invalid camera state payload",
+      });
     }
 
     const peers = roomPeers.get(interviewId);
     const currentPeer = peers?.get(socket.id);
 
     if (!currentPeer) {
-        return ack?.({
-            success: false,
-            message: "Peer not found in interview room",
-        });
+      return ack?.({
+        success: false,
+        message: "Peer not found in interview room",
+      });
     }
 
-    // Always store the participant's latest camera state.
     currentPeer.cameraEnabled = cameraEnabled;
 
-    // No remote participant yet: state is stored for future joiners.
     if (!peerId) {
-        return ack?.({ success: true });
+      return ack?.({ success: true });
     }
 
     if (
-        typeof peerId !== "string" ||
-        !peers.has(peerId) ||
-        peerId === socket.id
+      typeof peerId !== "string" ||
+      !peers.has(peerId) ||
+      peerId === socket.id
     ) {
-        return ack?.({
-            success: false,
-            message: "Target peer is not in your interview room",
-        });
+      return ack?.({
+        success: false,
+        message: "Target peer is not in your interview room",
+      });
     }
 
     io.to(peerId).emit("webrtc:camera-state", {
-        peerId: socket.id,
-        cameraEnabled,
+      peerId: socket.id,
+      cameraEnabled,
     });
 
     ack?.({ success: true });
-});
+  });
 
-  // Synchronize microphone state with the other participant
   socket.on("webrtc:mic-state", (payload = {}, ack) => {
     const { peerId, micEnabled } = payload;
-
     const interviewId = socketRooms.get(socket.id);
 
     if (!interviewId) {
-        return ack?.({
-            success: false,
-            message: "Join a WebRTC room first",
-        });
+      return ack?.({
+        success: false,
+        message: "Join a WebRTC room first",
+      });
     }
 
     if (typeof micEnabled !== "boolean") {
-        return ack?.({
-            success: false,
-            message: "Invalid microphone state payload",
-        });
+      return ack?.({
+        success: false,
+        message: "Invalid microphone state payload",
+      });
     }
 
     const peers = roomPeers.get(interviewId);
     const currentPeer = peers?.get(socket.id);
 
     if (!currentPeer) {
-        return ack?.({
-            success: false,
-            message: "Peer not found in interview room",
-        });
+      return ack?.({
+        success: false,
+        message: "Peer not found in interview room",
+      });
     }
 
-    // Always store the participant's latest microphone state.
     currentPeer.micEnabled = micEnabled;
 
-    // No remote participant yet: state is stored for future joiners.
     if (!peerId) {
-        return ack?.({ success: true });
+      return ack?.({ success: true });
     }
 
     if (
-        typeof peerId !== "string" ||
-        !peers.has(peerId) ||
-        peerId === socket.id
+      typeof peerId !== "string" ||
+      !peers.has(peerId) ||
+      peerId === socket.id
     ) {
-        return ack?.({
-            success: false,
-            message: "Target peer is not in your interview room",
-        });
+      return ack?.({
+        success: false,
+        message: "Target peer is not in your interview room",
+      });
     }
 
     io.to(peerId).emit("webrtc:mic-state", {
-        peerId: socket.id,
-        micEnabled,
+      peerId: socket.id,
+      micEnabled,
     });
 
     ack?.({ success: true });
-});
+  });
 
   socket.on("webrtc:leave", () => {
     leaveWebRTCRoom(socket);
@@ -342,7 +368,14 @@ const registerWebRTCHandlers = (io, socket) => {
   });
 };
 
-const relayToPeer = ({ io, socket, payload, eventName, validate, ack }) => {
+const relayToPeer = ({
+  io,
+  socket,
+  payload,
+  eventName,
+  validate,
+  ack,
+}) => {
   const respond = (success, message) => {
     if (typeof ack === "function") {
       ack({ success, message });
@@ -367,7 +400,11 @@ const relayToPeer = ({ io, socket, payload, eventName, validate, ack }) => {
 
   const peers = roomPeers.get(interviewId);
 
-  if (!peers || !peers.has(socket.id) || !peers.has(peerId)) {
+  if (
+    !peers ||
+    !peers.has(socket.id) ||
+    !peers.has(peerId)
+  ) {
     return respond(false, "Target peer is not in your interview room");
   }
 
@@ -389,13 +426,12 @@ const relayToPeer = ({ io, socket, payload, eventName, validate, ack }) => {
 const leaveWebRTCRoom = (socket) => {
   const interviewId = socketRooms.get(socket.id);
 
-  if (!interviewId) {
-    return;
-  }
+  if (!interviewId) return;
 
   const roomName = getRoomName(interviewId);
   const peers = roomPeers.get(interviewId);
 
+  // Delete this socket's mapping first to make cleanup idempotent.
   socketRooms.delete(socket.id);
 
   if (peers) {
@@ -408,7 +444,7 @@ const leaveWebRTCRoom = (socket) => {
 
   socket.leave(roomName);
 
-  // Broadcast to remaining peers, excluding the departing socket.
+  // Notify the remaining participant.
   socket.to(roomName).emit("webrtc:peer-left", {
     peerId: socket.id,
   });
