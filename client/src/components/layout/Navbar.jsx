@@ -13,6 +13,7 @@ import {
   Video,
   Users,
   Bell,
+  ShieldCheck,
 } from "lucide-react";
 
 import { useAuth } from "../../hooks/useAuth";
@@ -58,6 +59,13 @@ function Navbar() {
         label: "Join Interview",
         path: "/interviews/join",
         icon: Users,
+      }
+    ]:[]),
+    ...(user?.role === "admin" ? [
+      {
+        label: "Admin Panel",
+        path: "/admin",
+        icon: ShieldCheck,
       }
     ]:[])
   ];
