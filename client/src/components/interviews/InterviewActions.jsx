@@ -1,6 +1,6 @@
-
 import {
   CheckCircle2,
+  ClipboardCheck,
   LoaderCircle,
   Play,
   Video,
@@ -15,6 +15,8 @@ function InterviewActions({
   onCancel,
   onComplete,
   onJoin,
+  onViewScorecard,
+  onEvaluate,
 }) {
   const isManager = ["admin", "interviewer"].includes(userRole);
   const status = interview.status;
@@ -26,8 +28,10 @@ function InterviewActions({
       </h2>
 
       <div className="flex flex-wrap gap-3">
+        {/* Start interview */}
         {isManager && status === "waiting" && (
           <button
+            type="button"
             onClick={onStart}
             disabled={loading}
             className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
@@ -41,8 +45,10 @@ function InterviewActions({
           </button>
         )}
 
+        {/* Cancel interview */}
         {isManager && ["scheduled", "waiting"].includes(status) && (
           <button
+            type="button"
             onClick={onCancel}
             disabled={loading}
             className="inline-flex items-center gap-2 rounded-xl border border-red-500/30 px-5 py-3 text-sm font-semibold text-red-400 transition hover:bg-red-500/10 disabled:opacity-50"
@@ -52,8 +58,10 @@ function InterviewActions({
           </button>
         )}
 
+        {/* Complete interview */}
         {isManager && status === "active" && (
           <button
+            type="button"
             onClick={onComplete}
             disabled={loading}
             className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-green-500 disabled:opacity-50"
@@ -67,8 +75,10 @@ function InterviewActions({
           </button>
         )}
 
+        {/* Open interview room */}
         {status === "active" && (
           <button
+            type="button"
             onClick={onJoin}
             className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500"
           >
@@ -77,9 +87,32 @@ function InterviewActions({
           </button>
         )}
 
-        {["completed", "cancelled"].includes(status) && (
+        {/* Evaluate completed interview */}
+        {isManager && status === "completed" && (
+          <button
+            type="button"
+            onClick={onEvaluate}
+            className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-violet-500"
+          >
+            <ClipboardCheck size={17} />
+            Evaluate Candidate
+          </button>
+        )}
+
+        {userRole === "candidate" && interview?.status === "completed" && (
+          <button
+            onClick={onViewScorecard}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-primary-dark"
+          >
+            <ClipboardCheck size={17} />
+            View Scorecard
+          </button>
+        )}
+
+        {/* Status messages */}
+        {status === "cancelled" && (
           <p className="text-sm text-slate-400">
-            This interview is {status}. No further actions are available.
+            This interview has been cancelled.
           </p>
         )}
 

@@ -38,6 +38,7 @@ function InterviewDetails() {
           error.message ||
           "Failed to load interview."
       );
+
       setInterview(null);
     } finally {
       setLoading(false);
@@ -108,6 +109,13 @@ function InterviewDetails() {
     navigate(`/interviews/${id}/room`);
   };
 
+  const handleEvaluate = () => {
+    navigate(`/interviews/${id}/evaluation`);
+  };
+  const handleViewScorecard = () => {
+  navigate(`/interviews/${id}/scorecard`);
+};
+
   if (loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -122,9 +130,11 @@ function InterviewDetails() {
         <h2 className="text-xl font-semibold text-white">
           Interview not found
         </h2>
+
         <p className="mt-2 text-sm text-slate-400">
           The interview may have been removed or you may not have permission to view it.
         </p>
+
         <Link
           to="/interviews"
           className="mt-6 inline-flex rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white hover:bg-indigo-500"
@@ -134,7 +144,6 @@ function InterviewDetails() {
       </div>
     );
   }
-
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-8 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl space-y-6">
@@ -160,10 +169,13 @@ function InterviewDetails() {
           onCancel={handleCancel}
           onComplete={handleComplete}
           onJoin={handleJoin}
+          onEvaluate={handleEvaluate}
+          onViewScorecard={handleViewScorecard}
         />
       </div>
     </main>
   );
+  
 }
 
 export default InterviewDetails;

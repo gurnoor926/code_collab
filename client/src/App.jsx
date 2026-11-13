@@ -16,6 +16,9 @@ import CreateInterview from "./pages/interviews/CreateInterview";
 import JoinInterview from "./pages/interviews/JoinInterview";
 import InterviewDetails from "./pages/interviews/InterviewDetails";
 import InterviewRoom from "./pages/interviews/InterviewRoom";
+import InterviewEvaluation from "./pages/interviews/InterviewEvaluation";
+import CandidateScorecard from "./pages/interviews/CandidateScorecard";
+import EvaluationDashboard from "./pages/dashboard/EvaluationDashboard";
 
 function App() {
   return (
@@ -60,9 +63,19 @@ function App() {
           }
         />
         <Route path="/interviews/create" element={<CreateInterview />} />
+        <Route
+          path="/interviews/:id/evaluation"
+          element={<InterviewEvaluation />}
+        />
+        <Route path="/evaluations" element={<EvaluationDashboard />} />
       </Route>
+
       <Route element={<ProtectedRoute allowedRoles={["candidate"]} />}>
         <Route path="/interviews/join" element={<JoinInterview />} />
+        <Route
+          path="/interviews/:id/scorecard"
+          element={<CandidateScorecard />}
+        />
       </Route>
 
       <Route path="/unauthorized" element={<Unauthorized />} />
