@@ -60,7 +60,10 @@ function Login() {
       <form onSubmit={handleSubmit} className="space-y-5">
 
         <div>
-          <label className="mb-2 block text-sm font-medium text-zinc-300">
+          <label
+            htmlFor="email"
+            className="mb-2 block text-sm font-medium text-zinc-300"
+          >
             Email address
           </label>
 
@@ -71,6 +74,7 @@ function Login() {
             />
 
             <input
+              id="email"
               type="email"
               name="email"
               value={formData.email}
@@ -85,12 +89,16 @@ function Login() {
 
         <div>
           <div className="mb-2 flex items-center justify-between">
-            <label className="text-sm font-medium text-zinc-300">
+            <label
+              htmlFor="password"
+              className="text-sm font-medium text-zinc-300"
+            >
               Password
             </label>
           </div>
 
           <PasswordField
+            id="password"
             value={formData.password}
             onChange={(event) =>
               setFormData({

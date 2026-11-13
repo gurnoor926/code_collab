@@ -126,8 +126,9 @@ function ReplayEventList({
             No events match the criteria.
           </div>
         ) : (
-          filteredEvents.map((ev) => {
-            const isCurrent = ev.originalIndex === currentEventIndex;
+          filteredEvents.map((ev, idx) => {
+            const eventIndex = ev.originalIndex !== undefined ? ev.originalIndex : idx;
+            const isCurrent = eventIndex === currentEventIndex;
             const badge = getEventBadge(ev.eventType);
             const Icon = badge.icon;
 
@@ -145,9 +146,9 @@ function ReplayEventList({
 
             return (
               <button
-                key={ev._id || ev.sequence}
+                key={ev._id || ev.sequence || idx}
                 type="button"
-                onClick={() => onSelectEvent(ev.originalIndex)}
+                onClick={() => onSelectEvent(eventIndex)}
                 className={`w-full text-left rounded-xl p-2.5 transition flex items-center justify-between gap-3 ${
                   isCurrent
                     ? "bg-indigo-600/20 border border-indigo-500/40 text-white"

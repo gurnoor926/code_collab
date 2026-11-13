@@ -289,7 +289,10 @@ function Register() {
 
         {/* Full Name */}
         <div>
-          <label className="mb-2 block text-sm font-medium text-zinc-300">
+          <label
+            htmlFor="name"
+            className="mb-2 block text-sm font-medium text-zinc-300"
+          >
             Full name
           </label>
 
@@ -300,6 +303,7 @@ function Register() {
             />
 
             <input
+              id="name"
               type="text"
               name="name"
               value={formData.name}
@@ -316,7 +320,10 @@ function Register() {
 
         {/* Email */}
         <div>
-          <label className="mb-2 block text-sm font-medium text-zinc-300">
+          <label
+            htmlFor="email"
+            className="mb-2 block text-sm font-medium text-zinc-300"
+          >
             Email address
           </label>
 
@@ -327,6 +334,7 @@ function Register() {
             />
 
             <input
+              id="email"
               type="email"
               name="email"
               value={formData.email}
@@ -341,11 +349,15 @@ function Register() {
 
         {/* Password */}
         <div>
-          <label className="mb-2 block text-sm font-medium text-zinc-300">
+          <label
+            htmlFor="password"
+            className="mb-2 block text-sm font-medium text-zinc-300"
+          >
             Password
           </label>
 
           <PasswordField
+            id="password"
             value={formData.password}
             onChange={(event) =>
               setFormData((prev) => ({
@@ -364,11 +376,15 @@ function Register() {
 
         {/* Confirm Password */}
         <div>
-          <label className="mb-2 block text-sm font-medium text-zinc-300">
+          <label
+            htmlFor="confirmPassword"
+            className="mb-2 block text-sm font-medium text-zinc-300"
+          >
             Confirm password
           </label>
 
           <PasswordField
+            id="confirmPassword"
             value={formData.confirmPassword}
             onChange={(event) =>
               setFormData((prev) => ({

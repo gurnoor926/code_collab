@@ -1,6 +1,6 @@
 
 import { useEffect, useState } from "react";
-import { AuthContext } from "./authContext";
+import { AuthContext } from "./authContextDef";
 import authService from "../services/authService";
 
 export function AuthProvider({ children }) {
@@ -84,3 +84,6 @@ export function AuthProvider({ children }) {
     </AuthContext.Provider>
   );
 }
+
+export default AuthProvider;
+

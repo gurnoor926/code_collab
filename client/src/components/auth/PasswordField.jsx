@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Eye, EyeOff, Lock } from "lucide-react";
 
 function PasswordField({
+  id = "password",
   value,
   onChange,
   placeholder = "Enter your password",
@@ -18,6 +19,7 @@ function PasswordField({
       />
 
       <input
+        id={id}
         type={visible ? "text" : "password"}
         value={value}
         onChange={onChange}
