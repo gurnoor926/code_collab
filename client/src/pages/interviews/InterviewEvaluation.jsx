@@ -72,7 +72,7 @@ function getEvaluationData(response) {
   const data = response?.data ?? response;
 
   return {
-    evaluation: data?.evaluation ?? null,
+    evaluation: data?.evaluation ?? (data?.scores || data?.recommendation ? data : null),
     coding: data?.coding ?? null,
   };
 }

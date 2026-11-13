@@ -188,7 +188,9 @@ export default function CandidateScorecard() {
         interviewData?.interview ?? interviewData
       );
 
-      setEvaluation(evaluationData?.evaluation ?? null);
+      setEvaluation(
+        evaluationData?.evaluation ?? (evaluationData?.recommendation || evaluationData?.scores ? evaluationData : null)
+      );
       setCoding(evaluationData?.coding ?? null);
     } catch (err) {
       const message =

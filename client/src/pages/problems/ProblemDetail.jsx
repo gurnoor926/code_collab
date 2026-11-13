@@ -306,7 +306,7 @@ function ProblemDetail() {
                     </div>
                   </div>
 
-                  {problem.constraints?.length > 0 && (
+                  {Array.isArray(problem.constraints) && problem.constraints.length > 0 && (
                     <div>
                       <h3 className="mb-3 font-semibold text-white">
                         Constraints

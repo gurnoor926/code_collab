@@ -88,7 +88,7 @@ function NotificationCenter() {
         unreadOnly: filterMode === "unread",
       });
       if (res?.success) {
-        setNotifications(res.data?.notifications || []);
+        setNotifications(res.data?.notifications || (Array.isArray(res.data) ? res.data : []));
       }
     } catch {
       toast.error("Failed to load notifications.");

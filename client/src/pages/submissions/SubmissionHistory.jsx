@@ -47,14 +47,15 @@ function SubmissionHistory() {
         });
 
         const result = response?.data;
+        const subs = Array.isArray(result) ? result : (result?.submissions || response?.submissions || []);
 
-        setSubmissions(result?.submissions || []);
+        setSubmissions(subs);
         setPagination(
           result?.pagination || {
             page,
             limit,
-            total: 0,
-            totalPages: 0,
+            total: subs.length,
+            totalPages: 1,
           }
         );
       } catch (err) {

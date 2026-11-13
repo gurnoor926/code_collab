@@ -51,10 +51,10 @@ function InterviewReplay() {
         });
 
         if (res?.success && res.data) {
-          sessionData = res.data.session;
-          const events = res.data.events || [];
+          sessionData = res.data.session || null;
+          const events = res.data.events || (Array.isArray(res.data) ? res.data : []);
           allEvents = [...allEvents, ...events];
-          hasMore = res.data.hasMore && events.length > 0;
+          hasMore = Boolean(res.data.hasMore && events.length > 0);
           afterSequence = res.data.nextAfterSequence;
         } else {
           hasMore = false;
