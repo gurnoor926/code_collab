@@ -1,4 +1,3 @@
-import process from "node:process";
 import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
@@ -29,9 +28,9 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: "npx vite --port 5173",
+    command: "npm run dev",
     url: "http://127.0.0.1:5173",
-    reuseExistingServer: !process.env.CI,
-    timeout: 60000,
+    reuseExistingServer: true,
+    timeout: 120000,
   },
 });

@@ -24,7 +24,7 @@ export function AuthProvider({ children }) {
         const response = await authService.getCurrentUser();
 
         if (isMounted) {
-          setUser(response.user);
+          setUser(response?.user || response?.data || null);
         }
       } catch {
         localStorage.removeItem("token");
