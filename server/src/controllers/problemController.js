@@ -8,119 +8,127 @@ const createSlug = (title)=>{
             .replace(/^-|-$/g,"");
 };
 // all problems
-const getProblems = async (req,res) =>{
-    try {
-        const page = Math.max(1,Number.parseInt(req.query.page,10)||1);
-        const limit = Math.min(50,Math.max(1,Number,parseInt(req.query.limit,10)||10));
+const getProblems = async (req, res) => {
+  try {
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(
+      50,
+      Math.max(1, Number.parseInt(req.query.limit, 10) || 10)
+    );
 
-        const {difficulty , category ,search} = req.query;
+    const { difficulty, category, search, isPublished } = req.query;
 
-        const filter = {
-            isPublished : true,
-        }
+    const filter = {};
 
-        if(difficulty){
-           const validDifficulties = ["Easy", "Medium" , "Hard"];
-
-           if(!validDifficulties.includes(difficulty)){
-            return res.status(400).json({
-                success: false,
-                message:"Invalid difficulty filter"
-            });
-           }
-           filter.difficulty = difficulty;
-        }
-
-        if(category){
-            filter.category = {
-                $regex: category,
-                $options: "i",
-            };
-        }
-
-        if(search && search.trim()){
-            filter.$text = {
-                $search : search.trim(),
-            };
-        }
-
-        const skip = (page - 1) * limit;
-
-        const [problems,total] = await Promise.all([
-            Problem.find(filter)
-                 .select(
-                    "title slug difficulty category tags supportedLanguages createdAt"
-                 )
-                 .sort({ createdAt: -1})
-                  .skip(skip)
-                  .limit(limit)
-                  .lean(),
-            Problem.countDocuments(filter),
-        ])
-
-        return res.status(200).json({
-            success:true,
-            data:problems,
-            pagination : {
-                total,
-                page,
-                limit,
-                totalPages : Math.ceil(total/limit),
-            },
-        })
-
-    } catch(error){
-
-        console.error("Get problems error : ", error.message);
-
-        return res.status(500).json({
-            success:false,
-            message:"Failed to retrive problems"
-        });
-
+    if (isPublished === "all") {
+      // Do not filter by isPublished
+    } else if (isPublished === "false" || isPublished === false) {
+      filter.isPublished = false;
+    } else {
+      filter.isPublished = true;
     }
+
+    if (difficulty) {
+      const validDifficulties = ["Easy", "Medium", "Hard"];
+
+      if (!validDifficulties.includes(difficulty)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid difficulty filter",
+        });
+      }
+      filter.difficulty = difficulty;
+    }
+
+    if (category) {
+      filter.category = {
+        $regex: category,
+        $options: "i",
+      };
+    }
+
+    if (search && search.trim()) {
+      filter.$text = {
+        $search: search.trim(),
+      };
+    }
+
+    const skip = (page - 1) * limit;
+
+    const [problems, total] = await Promise.all([
+      Problem.find(filter)
+        .select(
+          "title slug difficulty category tags supportedLanguages isPublished createdAt"
+        )
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Problem.countDocuments(filter),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: problems,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error("Get problems error : ", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrive problems",
+    });
+  }
 };
 
 // single problem
-const getProblemById = async(req,res) =>{
-    try{
-       const problem = await Problem.findOne({
-        _id:req.params.id,
-        isPublished:true,
-       })
-       .select("-__v")
-       .lean();
+const getProblemById = async (req, res) => {
+  try {
+    const problem = await Problem.findById(req.params.id)
+      .select("-__v")
+      .lean();
 
-       if(!problem){
-        return res.status(404).json({
-            succes:false,
-            message:"Problem not found"
-        });
-       }
-
-       return res.status(200).json({
-        sucess:true,
-        data:problem
-       });
-
-
-    }catch(error){
-
-        if(error.name === "CastError"){
-            return res.status(400).json({
-                success:false,
-                message:"Invalid problem Id",
-            });
-        }
-
-        console.error("Get problem error : " , error.message);
-
-        return res.status(500).json({
-            success:false,
-            message:"Failed to retrieve problem"
-        });
-                  
+    if (!problem) {
+      return res.status(404).json({
+        success: false,
+        message: "Problem not found",
+      });
     }
+
+    if (!problem.isPublished && req.query.allowDraft !== "true") {
+      if (!req.user || req.user.role !== "admin") {
+        return res.status(404).json({
+          success: false,
+          message: "Problem not found",
+        });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: problem,
+    });
+  } catch (error) {
+    if (error.name === "CastError") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid problem Id",
+      });
+    }
+
+    console.error("Get problem error : ", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve problem",
+    });
+  }
 };
 
 //  create problems
@@ -176,50 +184,48 @@ if (existingProblem) {
 };
 
 // update a problem
-const updateProblem = async (req,res)=>{
-    try{
-      const updates = {...req.body};
+const updateProblem = async (req, res) => {
+  try {
+    const updates = { ...req.body };
 
-      if(updates.title){
-        updates.slug = createSlug(updates.title)
+    if (updates.title) {
+      updates.slug = createSlug(updates.title);
 
-        const existingProblem = Problem.findOne({
-            slug : updates.slug,
-            _id : {$ne:req.params.id},
-        });
-
-        if(existingProblem){
-            return res.stauts(409).json({
-                success:false,
-                message:"Another problem already uses this title"
-            });
-        }
-      }
-
-      const problem = await Problem.findByIdAndUpdate(
-        req.param.id,
-        updates,
-        {
-            new:true,
-            runValidators:true
-        }
-      );
-
-      if(!problem){
-        return res.status(404).json({
-            success:false,
-            message:"Problem not found"
-        });
-
-      }
-
-      return res.status(200).json({
-        success:true,
-        message:"problem updated successfully",
-        data: problem,
+      const existingProblem = await Problem.findOne({
+        slug: updates.slug,
+        _id: { $ne: req.params.id },
       });
 
-    }catch(error){
+      if (existingProblem) {
+        return res.status(409).json({
+          success: false,
+          message: "Another problem already uses this title",
+        });
+      }
+    }
+
+    const problem = await Problem.findByIdAndUpdate(
+      req.params.id,
+      updates,
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    if (!problem) {
+      return res.status(404).json({
+        success: false,
+        message: "Problem not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Problem updated successfully",
+      data: problem,
+    });
+  } catch (error) {
 
          if (error.name === "CastError") {
       return res.status(400).json({

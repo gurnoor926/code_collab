@@ -9,6 +9,7 @@ const {
     submitCode,
     getMySubmissions,
     getSubmissionById,
+    getInterviewSubmissions,
 } = require("../controllers/submissionController");
 
 router.use(protect);
@@ -18,6 +19,8 @@ router.post("/run", runCodeAgainstExamples);
 router.post("/submit", submitCode);
 
 router.get("/my", getMySubmissions);
+
+router.get("/interview/:interviewId", getInterviewSubmissions);
 
 router.get("/:id", getSubmissionById);
 

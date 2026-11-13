@@ -13,6 +13,7 @@ const testCaseRoutes = require("./routes/testCaseRoutes");
 const replayRoutes = require("./routes/replayRoutes");
 const evaluationRoutes = require("./routes/evaluationRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 ///const testRoutes = require("./routes/testRoutes")
 
 const { notFound, errorHandler } = require("./middleware/errorMiddleware");
@@ -69,6 +70,7 @@ app.use("/api/test-cases", testCaseRoutes);
 app.use("/api/replays", replayRoutes);
 app.use("/api/evaluations", evaluationRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/admin", adminRoutes);
 //app.use("/api/test", testRoutes);
 
 //keep after all routes

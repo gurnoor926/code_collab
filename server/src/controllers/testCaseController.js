@@ -69,7 +69,7 @@ const createTestCase = async (req, res) => {
   } catch (error) {
     console.error("Create test case error : ", error.message);
 
-    return re.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "failed to create test case",
     });

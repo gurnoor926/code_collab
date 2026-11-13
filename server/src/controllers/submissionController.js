@@ -6,6 +6,7 @@ const {
 } = require("../services/submissionService");
 
 const Submission = require("../models/Submission");
+const InterviewSession = require("../models/InterviewSession");
 
 const validateIds = ({ problemId, interviewId }) => {
     if (!mongoose.isValidObjectId(problemId)) {
@@ -204,12 +205,15 @@ const getSubmissionById = async (req, res) => {
             });
         }
 
-        const submission = await Submission.findOne({
-            _id: id,
-            user: req.user.userId,
-        })
-            .select("-__v -errorMessage")
+        const query = { _id: id };
+        if (req.user.role !== "admin") {
+            query.user = req.user.userId;
+        }
+
+        const submission = await Submission.findOne(query)
+            .select("-__v")
             .populate("problem", "title slug difficulty")
+            .populate("user", "name email")
             .lean();
 
         if (!submission) {
@@ -236,9 +240,64 @@ const getSubmissionById = async (req, res) => {
     }
 };
 
+const getInterviewSubmissions = async (req, res) => {
+    try {
+        const { interviewId } = req.params;
+
+        if (!mongoose.isValidObjectId(interviewId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid interview ID",
+            });
+        }
+
+        const interview = await InterviewSession.findById(interviewId)
+            .select("interviewer candidate")
+            .lean();
+
+        if (!interview) {
+            return res.status(404).json({
+                success: false,
+                message: "Interview not found",
+            });
+        }
+
+        const userId = req.user.userId.toString();
+        const isParticipant =
+            interview.interviewer?.toString() === userId ||
+            interview.candidate?.toString() === userId ||
+            req.user.role === "admin";
+
+        if (!isParticipant) {
+            return res.status(403).json({
+                success: false,
+                message: "You do not have access to this interview's submissions",
+            });
+        }
+
+        const submissions = await Submission.find({ interview: interviewId })
+            .populate("problem", "title difficulty")
+            .populate("user", "name email")
+            .sort({ submittedAt: -1 })
+            .lean();
+
+        return res.status(200).json({
+            success: true,
+            data: submissions,
+        });
+    } catch (error) {
+        console.error("Get interview submissions error:", error.message);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to retrieve interview submissions",
+        });
+    }
+};
+
 module.exports = {
     runCodeAgainstExamples,
     submitCode,
     getMySubmissions,
     getSubmissionById,
+    getInterviewSubmissions,
 };
