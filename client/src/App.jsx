@@ -19,6 +19,9 @@ import InterviewRoom from "./pages/interviews/InterviewRoom";
 import InterviewEvaluation from "./pages/interviews/InterviewEvaluation";
 import CandidateScorecard from "./pages/interviews/CandidateScorecard";
 import EvaluationDashboard from "./pages/dashboard/EvaluationDashboard";
+import InterviewReplay from "./pages/replay/InterviewReplay";
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import NotificationCenter from "./pages/notifications/NotificationCenter";
 
 function App() {
   return (
@@ -39,18 +42,15 @@ function App() {
         <Route path="/interviews" element={<InterviewDashboard />} />
         <Route path="/interviews/:id" element={<InterviewDetails />} />
         <Route path="/interviews/:id/room" element={<InterviewRoom />} />
+        <Route path="/interviews/:id/replay" element={<InterviewReplay />} />
+        <Route path="/interview/:id/replay" element={<InterviewReplay />} />
+        <Route path="/notifications" element={<NotificationCenter />} />
       </Route>
 
-      {/* Example role-protected routes */}
+      {/* Admin routes */}
       <Route element={<ProtectedRoute allowedRoles={["admin"]} />}>
-        <Route
-          path="/admin"
-          element={
-            <div className="min-h-screen bg-background p-8 text-white">
-              Admin area
-            </div>
-          }
-        />
+        <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/admin/*" element={<AdminDashboard />} />
       </Route>
 
       <Route element={<ProtectedRoute allowedRoles={["interviewer"]} />}>

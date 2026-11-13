@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import problemService from "../../services/problemService";
+import replayService from "../../services/replayService";
 
 const languages = [
   { label: "JavaScript", value: "javascript" },
@@ -109,6 +110,8 @@ function CollaborativeEditor({
   const suppressRemoteChange = useRef(false);
   const remoteDecorations = useRef([]);
   const cursorListenerRef = useRef(null);
+  const replayDebounceRef = useRef(null);
+  const changeCountRef = useRef(0);
 
   const [language, setLanguage] = useState("javascript");
   const [code, setCode] = useState(defaultStarterCode.javascript);
@@ -391,6 +394,29 @@ function CollaborativeEditor({
         }
       }
     );
+
+    // Debounced replay recording
+    if (replayDebounceRef.current) {
+      clearTimeout(replayDebounceRef.current);
+    }
+    replayDebounceRef.current = setTimeout(() => {
+      changeCountRef.current += 1;
+      if (changeCountRef.current % 25 === 0) {
+        replayService
+          .createSnapshot(activeInterviewId, {
+            code: nextCode,
+            language,
+          })
+          .catch(() => {});
+      } else {
+        replayService
+          .recordCodeChange(activeInterviewId, {
+            code: nextCode,
+            language,
+          })
+          .catch(() => {});
+      }
+    }, 1500);
   };
 
   // Synchronize language changes and load its starter code.
@@ -427,6 +453,16 @@ function CollaborativeEditor({
       code: nextCode,
       language: nextLanguage,
     });
+
+    replayService
+      .recordLanguageChange(activeInterviewId, { language: nextLanguage })
+      .catch(() => {});
+    replayService
+      .recordCodeChange(activeInterviewId, {
+        code: nextCode,
+        language: nextLanguage,
+      })
+      .catch(() => {});
   };
 
   // Run code using the existing execution handler.
@@ -457,9 +493,12 @@ function CollaborativeEditor({
     });
   };
 
-  // Dispose Monaco listeners when the component unmounts.
+  // Dispose Monaco listeners and timers when the component unmounts.
   useEffect(() => {
     return () => {
+      if (replayDebounceRef.current) {
+        clearTimeout(replayDebounceRef.current);
+      }
       cursorListenerRef.current?.dispose();
       cursorListenerRef.current = null;
     };

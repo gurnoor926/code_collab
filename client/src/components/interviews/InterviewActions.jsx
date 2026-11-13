@@ -1,6 +1,7 @@
 import {
   CheckCircle2,
   ClipboardCheck,
+  Film,
   LoaderCircle,
   Play,
   Video,
@@ -17,6 +18,7 @@ function InterviewActions({
   onJoin,
   onViewScorecard,
   onEvaluate,
+  onViewReplay,
 }) {
   const isManager = ["admin", "interviewer"].includes(userRole);
   const status = interview.status;
@@ -96,6 +98,18 @@ function InterviewActions({
           >
             <ClipboardCheck size={17} />
             Evaluate Candidate
+          </button>
+        )}
+
+        {/* Session Replay */}
+        {status === "completed" && (
+          <button
+            type="button"
+            onClick={onViewReplay}
+            className="inline-flex items-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-5 py-3 text-sm font-semibold text-indigo-300 transition hover:bg-indigo-500/20 hover:text-white"
+          >
+            <Film size={17} />
+            Session Replay
           </button>
         )}
 

@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 
 import interviewService from "../../services/interviewService";
 import submissionService from "../../services/submissionService";
+import replayService from "../../services/replayService";
 import { useAuth } from "../../hooks/useAuth";
 
 import RoomHeader from "../../components/interview-room/RoomHeader";
@@ -54,6 +55,18 @@ function InterviewRoom() {
 
     return () => clearTimeout(timer);
   }, [fetchInterview]);
+
+  useEffect(() => {
+    if (
+      interview &&
+      interview.status === "active" &&
+      currentUser?.role !== "candidate"
+    ) {
+      replayService
+        .startReplay(id, { initialCode: "", initialLanguage: "javascript" })
+        .catch(() => {});
+    }
+  }, [interview, id, currentUser]);
 
   const {
     socket,

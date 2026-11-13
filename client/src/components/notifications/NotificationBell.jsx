@@ -1,5 +1,6 @@
 
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { io } from "socket.io-client";
 import {
   Bell,
@@ -370,10 +371,14 @@ useEffect(() => {
               )}
             </div>
 
-            <div className="border-t border-white/10 p-3 text-center">
-              <p className="text-xs text-zinc-500">
-                Showing your latest 8 notifications
-              </p>
+            <div className="border-t border-white/10 p-2 text-center bg-zinc-900/50">
+              <Link
+                to="/notifications"
+                onClick={() => setOpen(false)}
+                className="block w-full rounded-lg py-1.5 text-xs font-semibold text-indigo-400 hover:bg-white/5 hover:text-indigo-300 transition"
+              >
+                View all in Notification Center →
+              </Link>
             </div>
           </div>
         </>

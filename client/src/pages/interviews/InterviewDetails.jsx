@@ -5,6 +5,7 @@ import { ArrowLeft, LoaderCircle } from "lucide-react";
 import toast from "react-hot-toast";
 
 import interviewService from "../../services/interviewService";
+import replayService from "../../services/replayService";
 import { useAuth } from "../../hooks/useAuth";
 
 import InterviewDetailsCard from "../../components/interviews/InterviewDetailsCard";
@@ -89,7 +90,18 @@ function InterviewDetails() {
 
   const handleStart = () => {
     performAction(
-      interviewService.startInterview,
+      async (interviewId) => {
+        const res = await interviewService.startInterview(interviewId);
+        try {
+          await replayService.startReplay(interviewId, {
+            initialCode: "",
+            initialLanguage: "javascript",
+          });
+        } catch (e) {
+          console.warn("Replay start notice:", e?.message);
+        }
+        return res;
+      },
       "Interview started successfully."
     );
   };
@@ -100,7 +112,14 @@ function InterviewDetails() {
     }
 
     performAction(
-      interviewService.completeInterview,
+      async (interviewId) => {
+        try {
+          await replayService.completeReplay(interviewId);
+        } catch (e) {
+          console.warn("Replay complete notice:", e?.message);
+        }
+        return interviewService.completeInterview(interviewId);
+      },
       "Interview completed successfully."
     );
   };
@@ -112,9 +131,14 @@ function InterviewDetails() {
   const handleEvaluate = () => {
     navigate(`/interviews/${id}/evaluation`);
   };
+
   const handleViewScorecard = () => {
-  navigate(`/interviews/${id}/scorecard`);
-};
+    navigate(`/interviews/${id}/scorecard`);
+  };
+
+  const handleViewReplay = () => {
+    navigate(`/interviews/${id}/replay`);
+  };
 
   if (loading) {
     return (
@@ -171,6 +195,7 @@ function InterviewDetails() {
           onJoin={handleJoin}
           onEvaluate={handleEvaluate}
           onViewScorecard={handleViewScorecard}
+          onViewReplay={handleViewReplay}
         />
       </div>
     </main>

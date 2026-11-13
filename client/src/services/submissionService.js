@@ -51,6 +51,12 @@ const submissionService = {
     const response = await api.get(`/submissions/${id}`);
     return response.data;
   },
+
+  // Retrieve submissions for a specific interview.
+  getInterviewSubmissions: async (interviewId) => {
+    const response = await api.get(`/submissions/interview/${interviewId}`);
+    return response.data;
+  },
 };
 
 export default submissionService;

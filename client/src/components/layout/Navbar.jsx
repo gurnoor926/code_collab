@@ -12,6 +12,7 @@ import {
   UserRound,
   Video,
   Users,
+  Bell,
 } from "lucide-react";
 
 import { useAuth } from "../../hooks/useAuth";
@@ -161,6 +162,18 @@ function Navbar() {
                 </div>
 
                 <div className="p-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closeMenus();
+                      navigate("/notifications");
+                    }}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-zinc-300 transition hover:bg-white/5 hover:text-white"
+                  >
+                    <Bell size={17} />
+                    Notification Center
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => {

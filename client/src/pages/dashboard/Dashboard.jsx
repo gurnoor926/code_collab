@@ -2,7 +2,7 @@
 import { useAuth } from "../../hooks/useAuth";
 import CandidateDashboard from "./CandidateDashboard";
 import InterviewerDashboard from "./InterviewerDashboard";
-import AppLayout from "../../components/layout/AppLayout";
+import AdminDashboard from "../admin/AdminDashboard";
 
 function Dashboard() {
   const { user } = useAuth();
@@ -15,18 +15,11 @@ function Dashboard() {
     return <InterviewerDashboard />;
   }
 
-  return (
-    <AppLayout>
-      <div className="rounded-xl border border-white/10 bg-[#18181f] p-8 text-center">
-        <h1 className="text-xl font-semibold text-white">
-          Admin Dashboard
-        </h1>
-        <p className="mt-2 text-sm text-zinc-400">
-          Administrative controls will be implemented in a later phase.
-        </p>
-      </div>
-    </AppLayout>
-  );
+  if (user?.role === "admin") {
+    return <AdminDashboard />;
+  }
+
+  return <AdminDashboard />;
 }
 
 export default Dashboard;
