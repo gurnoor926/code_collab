@@ -281,7 +281,143 @@ const submitEvaluation = async (req, res) => {
   }
 };
 
+
+// Get interviewer evaluation dashboard analytics without creating drafts.
+const getEvaluationDashboard = async (req, res) => {
+  try {
+    const isAdmin = req.user.role === "admin";
+    const isInterviewer = req.user.role === "interviewer";
+
+    if (!isAdmin && !isInterviewer) {
+      return res.status(403).json({
+        success: false,
+        message: "Only interviewers and admins can access evaluation analytics",
+      });
+    }
+
+    // Interviewers see only their interviews. Admins see all interviews.
+    const interviewFilter = {
+      status: "completed",
+    };
+
+    if (!isAdmin) {
+      interviewFilter.interviewer = req.user.userId;
+    }
+
+    const completedInterviews = await InterviewSession.find(interviewFilter)
+      .select("_id title candidate interviewer scheduledAt status")
+      .populate("candidate", "name email")
+      .populate("interviewer", "name email")
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    const interviewIds = completedInterviews.map(
+      (interview) => interview._id
+    );
+
+    // Only fetch submitted evaluations. This endpoint never creates drafts.
+    const submittedEvaluations = interviewIds.length
+      ? await InterviewEvaluation.find({
+          interview: { $in: interviewIds },
+          status: "submitted",
+        })
+          .populate("candidate", "name email")
+          .populate("interviewer", "name email")
+          .populate("interview", "title scheduledAt status")
+          .sort({ submittedAt: -1 })
+          .lean()
+      : [];
+
+    const submittedInterviewIds = new Set(
+      submittedEvaluations.map((evaluation) =>
+        evaluation.interview?._id
+          ? evaluation.interview._id.toString()
+          : evaluation.interview.toString()
+      )
+    );
+
+    // Completed interviews without a submitted evaluation are pending.
+    const pendingInterviews = completedInterviews
+      .filter(
+        (interview) =>
+          !submittedInterviewIds.has(interview._id.toString())
+      )
+      .map((interview) => ({
+        _id: interview._id,
+        title: interview.title,
+        candidate: interview.candidate,
+        interviewer: interview.interviewer,
+        scheduledAt: interview.scheduledAt,
+        status: interview.status,
+      }));
+
+    const submittedCount = submittedEvaluations.length;
+    const pendingCount = pendingInterviews.length;
+
+    const average = (field) => {
+      if (!submittedCount) return 0;
+
+      const total = submittedEvaluations.reduce(
+        (sum, evaluation) => sum + (Number(evaluation[field]) || 0),
+        0
+      );
+
+      return Math.round((total / submittedCount) * 100) / 100;
+    };
+
+    const recommendations = {
+      strong_hire: 0,
+      hire: 0,
+      hold: 0,
+      no_hire: 0,
+    };
+
+    submittedEvaluations.forEach((evaluation) => {
+      if (
+        Object.prototype.hasOwnProperty.call(
+          recommendations,
+          evaluation.recommendation
+        )
+      ) {
+        recommendations[evaluation.recommendation]++;
+      }
+    });
+
+    const averageRatings = {
+      technicalSkills: average("technicalSkills"),
+      problemSolving: average("problemSolving"),
+      communication: average("communication"),
+      codeQuality: average("codeQuality"),
+    };
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalInterviews: completedInterviews.length,
+        totalEvaluations: submittedCount,
+        submittedEvaluations: submittedCount,
+        pendingEvaluations: pendingCount,
+        averageScore: average("overallScore"),
+        averageCodingScore: average("codingScore"),
+        recommendations,
+        averageRatings,
+        evaluations: submittedEvaluations,
+        pendingInterviews,
+      },
+    });
+  } catch (error) {
+    console.error("Get evaluation dashboard error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to load evaluation dashboard",
+    });
+  }
+};
+
+
 module.exports = {
   getEvaluation,
   submitEvaluation,
+   getEvaluationDashboard,
 };
