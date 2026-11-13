@@ -12,6 +12,8 @@ logs/
 
 # Testing
 coverage/
+tests/
+*.test.js
 
 # OS files
 .DS_Store
@@ -24,4 +26,3 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
-
