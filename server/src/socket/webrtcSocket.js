@@ -359,10 +359,13 @@ const registerWebRTCHandlers = (io, socket) => {
     ack?.({ success: true });
   });
 
-  socket.on("webrtc:leave", () => {
-    leaveWebRTCRoom(socket);
-  });
+ socket.on("webrtc:leave", (ack) => {
+  leaveWebRTCRoom(socket);
 
+  if (typeof ack === "function") {
+    ack({ success: true });
+  }
+});
   socket.on("disconnecting", () => {
     leaveWebRTCRoom(socket);
   });

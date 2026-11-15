@@ -173,15 +173,6 @@ const initializeSocket = (io) => {
 
         await socket.join(roomName);
 
-        socket.to(roomName).emit("presence:user-joined", {
-          user: {
-            userId: socket.user.userId,
-            name: socket.user.name,
-            email: socket.user.email,
-            role: socket.user.role,
-            avatar: socket.user.avatar,
-          },
-        });
         if (!userAlreadyInRoom) {
           // Notify existing interview participants about the new arrival.
           socket.to(roomName).emit("presence:user-joined", {
@@ -204,21 +195,30 @@ const initializeSocket = (io) => {
 
           // Create and deliver a persistent notification.
           if (recipientId && recipientId !== userId) {
-            const notification = await Notification.create({
-              recipient: recipientId,
-              sender: userId,
-              type: "interview_joined",
-              title: "Participant joined",
-              message: `${socket.user.name} joined the interview "${interview.title}".`,
-              relatedInterview: interview._id,
-              metadata: {
-                interviewId: interview._id.toString(),
-                participantRole: socket.user.role,
-              },
-            });
+            try {
+              const notification = await Notification.create({
+                recipient: recipientId,
+                sender: userId,
+                type: "interview_joined",
+                title: "Participant joined",
+                message: `${socket.user.name} joined the interview "${interview.title}".`,
+                relatedInterview: interview._id,
+                metadata: {
+                  interviewId: interview._id.toString(),
+                  participantRole: socket.user.role,
+                },
+              });
 
-            // Deliver to the recipient's private notification room.
-            io.to(`user:${recipientId}`).emit("notification:new", notification);
+              io.to(`user:${recipientId}`).emit(
+                "notification:new",
+                notification,
+              );
+            } catch (notificationError) {
+              console.error(
+                "Unable to create interview notification:",
+                notificationError.message,
+              );
+            }
           }
         }
 
@@ -246,35 +246,34 @@ const initializeSocket = (io) => {
 
     //disconnect
 
-   socket.on("disconnecting", async () => {
-  for (const room of socket.rooms) {
-    if (!room.startsWith(ROOM_PREFIX)) continue;
+    socket.on("disconnecting", async () => {
+      for (const room of socket.rooms) {
+        if (!room.startsWith(ROOM_PREFIX)) continue;
 
-    try {
-      // Check whether another socket for this user remains in the room.
-      const roomSockets = await io.in(room).fetchSockets();
+        try {
+          // Check whether another socket for this user remains in the room.
+          const roomSockets = await io.in(room).fetchSockets();
 
-      const anotherSocketExists = roomSockets.some(
-        (roomSocket) =>
-          roomSocket.id !== socket.id &&
-          String(roomSocket.data.userId) ===
-            String(socket.user.userId)
-      );
+          const anotherSocketExists = roomSockets.some(
+            (roomSocket) =>
+              roomSocket.id !== socket.id &&
+              String(roomSocket.data.userId) === String(socket.user.userId),
+          );
 
-      // Only mark offline when the user's last socket leaves.
-      if (!anotherSocketExists) {
-        socket.to(room).emit("presence:user-left", {
-          user: {
-            userId: socket.user.userId,
-            name: socket.user.name,
-          },
-        });
+          // Only mark offline when the user's last socket leaves.
+          if (!anotherSocketExists) {
+            socket.to(room).emit("presence:user-left", {
+              user: {
+                userId: socket.user.userId,
+                name: socket.user.name,
+              },
+            });
+          }
+        } catch (error) {
+          console.error("Presence disconnect error:", error.message);
+        }
       }
-    } catch (error) {
-      console.error("Presence disconnect error:", error.message);
-    }
-  }
-});
+    });
 
     socket.on("disconnect", (reason) => {
       console.log(`Socket disconnected: ${socket.id}, reason: ${reason}`);
