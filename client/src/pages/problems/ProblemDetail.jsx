@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -10,6 +10,7 @@ import {
   AlertCircle,
   Terminal,
   FileCode2,
+  RefreshCw,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -59,47 +60,83 @@ function ProblemDetail() {
   const [submissionLoading, setSubmissionLoading] = useState(false);
   const [submissionResult, setSubmissionResult] = useState(null);
   const [submissionError, setSubmissionError] = useState("");
+  const [retryCount, setRetryCount] = useState(0);
+const requestIdRef = useRef(0);
 
   const isBusy = executionLoading || examplesLoading || submissionLoading;
 
   useEffect(() => {
-    let active = true;
+  let active = true;
 
-    const fetchProblem = async () => {
-      try {
-        const response = await problemService.getProblemById(id);
+  const requestId = ++requestIdRef.current;
 
-        if (!active) return;
+  const fetchProblem = async () => {
+    setLoading(true);
+    setError("");
+    setProblem(null);
 
-        const fetchedProblem = response.data;
+    setLanguage("javascript");
+    setCode("");
 
-        setProblem(fetchedProblem);
+    setExamplesResult(null);
+    setExamplesError("");
 
-        const languages = fetchedProblem.supportedLanguages ?? [];
-        const initialLanguage = languages.includes("javascript")
-          ? "javascript"
-          : languages[0] || "javascript";
+    setSubmissionResult(null);
+    setSubmissionError("");
 
-        setLanguage(initialLanguage);
+    clearResult();
 
-        const starterCode = fetchedProblem.starterCode ?? {};
-        setCode(starterCode[initialLanguage] || "");
-        setError("");
-      } catch (err) {
-        if (!active) return;
+    try {
+      const response = await problemService.getProblemById(id);
 
-        setError(err.response?.data?.message || "Unable to load this problem.");
-      } finally {
-        if (active) setLoading(false);
+      if (!active) return;
+
+      const fetchedProblem = response?.data;
+
+      if (!fetchedProblem) {
+        throw new Error("Problem data is unavailable.");
       }
-    };
 
-    fetchProblem();
+      setProblem(fetchedProblem);
 
-    return () => {
-      active = false;
-    };
-  }, [id]);
+      const languages = fetchedProblem.supportedLanguages ?? [];
+
+      const initialLanguage = languages.includes("javascript")
+        ? "javascript"
+        : languages[0] || "javascript";
+
+      setLanguage(initialLanguage);
+
+      const starterCode = fetchedProblem.starterCode ?? {};
+
+      setCode(starterCode[initialLanguage] || "");
+    } catch (err) {
+      if (!active) return;
+
+      setError(
+        err.userMessage ||
+          err.response?.data?.message ||
+          err.message ||
+          "Unable to load this problem. Please try again."
+      );
+    } finally {
+      if (active) {
+        setLoading(false);
+      }
+    }
+  };
+
+  fetchProblem();
+
+  return () => {
+    active = false;
+
+    // Invalidate pending example/submission requests.
+    if (requestIdRef.current === requestId) {
+      requestIdRef.current += 1;
+    }
+  };
+}, [id, retryCount,clearResult]);
 
   const handleLanguageChange = (nextLanguage) => {
     setLanguage(nextLanguage);
@@ -121,67 +158,91 @@ function ProblemDetail() {
       stdin: customInput,
     });
   };
-  const handleRunExamples = async () => {
-    if (!code.trim()) {
-      toast.error("Please write some code first.");
-      return;
-    }
+ const handleRunExamples = async () => {
+  if (!code.trim()) {
+    toast.error("Please write some code first.");
+    return;
+  }
 
-    setExamplesLoading(true);
-    setExamplesError("");
-    setExamplesResult(null);
-    setOutputTab("examples");
+  const requestId = requestIdRef.current;
 
-    try {
-      const response = await submissionService.runExamples({
-        problemId: id,
-        language,
-        code,
-      });
+  setExamplesLoading(true);
+  setExamplesError("");
+  setExamplesResult(null);
+  setOutputTab("examples");
 
-      setExamplesResult(response.data);
-    } catch (err) {
-      const message =
-        err.response?.data?.message || "Unable to run the example test cases.";
+  try {
+    const response = await submissionService.runExamples({
+      problemId: id,
+      language,
+      code,
+    });
 
-      setExamplesError(message);
-      toast.error(message);
-    } finally {
+    if (requestId !== requestIdRef.current) return;
+
+    setExamplesResult(response.data);
+  } catch (err) {
+    if (requestId !== requestIdRef.current) return;
+
+    const message =
+      err.userMessage ||
+      err.response?.data?.message ||
+      "Unable to run the example test cases.";
+
+    setExamplesError(message);
+    toast.error(message);
+  } finally {
+    if (requestId === requestIdRef.current) {
       setExamplesLoading(false);
     }
-  };
+  }
+};
 
   // 3. Formal submission against all test cases.
-  const handleSubmitCode = async () => {
-    if (!code.trim()) {
-      toast.error("Please write some code before submitting.");
-      return;
-    }
+ const handleSubmitCode = async () => {
+  if (!code.trim()) {
+    toast.error("Please write some code before submitting.");
+    return;
+  }
 
-    setSubmissionLoading(true);
-    setSubmissionError("");
-    setSubmissionResult(null);
-    setOutputTab("submission");
+  const requestId = requestIdRef.current;
 
-    try {
-      const response = await submissionService.submitSolution({
-        problemId: id,
-        language,
-        code,
-      });
+  setSubmissionLoading(true);
+  setSubmissionError("");
+  setSubmissionResult(null);
+  setOutputTab("submission");
 
-      setSubmissionResult(response.data);
-      toast.success("Solution evaluated successfully.");
-    } catch (err) {
-      const message =
-        err.response?.data?.message || "Unable to submit your solution.";
+  try {
+    const response = await submissionService.submitSolution({
+      problemId: id,
+      language,
+      code,
+    });
 
-      setSubmissionError(message);
-      toast.error(message);
-    } finally {
+    if (requestId !== requestIdRef.current) return;
+
+    setSubmissionResult(response.data);
+    toast.success("Solution evaluated successfully.");
+  } catch (err) {
+    if (requestId !== requestIdRef.current) return;
+
+    const message =
+      err.userMessage ||
+      err.response?.data?.message ||
+      "Unable to submit your solution.";
+
+    setSubmissionError(message);
+    toast.error(message);
+  } finally {
+    if (requestId === requestIdRef.current) {
       setSubmissionLoading(false);
     }
-  };
+  }
+};
+
+  const handleRetry = () => {
+  setRetryCount((current) => current + 1);
+};
 
   if (loading) {
     return (
@@ -193,31 +254,47 @@ function ProblemDetail() {
     );
   }
 
-  if (error || !problem) {
-    return (
-      <AppLayout>
-        <div className="mx-auto max-w-xl rounded-2xl border border-red-500/20 bg-[#18181f] p-8 text-center">
-          <AlertCircle size={30} className="mx-auto text-red-400" />
+ if (error || !problem) {
+  return (
+    <AppLayout>
+      <div className="mx-auto max-w-xl rounded-2xl border border-red-500/20 bg-[#18181f] p-8 text-center">
+        <AlertCircle
+          size={30}
+          className="mx-auto text-red-400"
+        />
 
-          <h2 className="mt-4 text-lg font-semibold text-white">
-            Problem unavailable
-          </h2>
+        <h2 className="mt-4 text-lg font-semibold text-white">
+          Problem unavailable
+        </h2>
 
-          <p className="mt-2 text-sm text-zinc-400">
-            {error || "This problem could not be found."}
-          </p>
+        <p className="mt-2 text-sm text-zinc-400">
+          {error || "This problem could not be found."}
+        </p>
 
+        {error && (
+          <button
+            type="button"
+            onClick={handleRetry}
+            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-indigo-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-400"
+          >
+            <RefreshCw size={15} />
+            Try again
+          </button>
+        )}
+
+        <div>
           <Link
             to="/problems"
-            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-indigo-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-400"
+            className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-zinc-400 transition hover:text-white"
           >
             <ArrowLeft size={16} />
             Back to problems
           </Link>
         </div>
-      </AppLayout>
-    );
-  }
+      </div>
+    </AppLayout>
+  );
+}
 
   const supportedLanguages = problem.supportedLanguages ?? [];
 

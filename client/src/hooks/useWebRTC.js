@@ -9,6 +9,7 @@ const ICE_SERVERS = {
 };
 
 const MEDIA_SETTINGS_KEY = "codecollab-media-settings";
+const SIGNALING_TIMEOUT = 10000;
 
 const getSavedMediaSettings = () => {
   try {
@@ -40,18 +41,43 @@ const saveMediaSettings = (settings) => {
 };
 
 function useWebRTC({ socket, joined, interviewId }) {
+  // --------------------------------------------------
+  // Refs
+  // --------------------------------------------------
+
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
   const remotePeerIdRef = useRef(null);
+
   const pendingCandidatesRef = useRef([]);
+
   const webrtcJoinedRef = useRef(false);
   const statsIntervalRef = useRef(null);
 
+  const mountedRef = useRef(false);
+  const mediaAllowedRef = useRef(false);
+  const mediaReadyRef = useRef(false);
+
+  const mediaInitializationRef = useRef(null);
+  const mediaRequestIdRef = useRef(0);
+
+  const mediaSettingsRef = useRef(null);
+
+  // --------------------------------------------------
+  // State
+  // --------------------------------------------------
+
   const [initialMediaSettings] = useState(getSavedMediaSettings);
+
+  if (mediaSettingsRef.current === null) {
+    mediaSettingsRef.current = initialMediaSettings;
+  }
 
   const [localStream, setLocalStream] = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
+
   const [remoteName, setRemoteName] = useState("");
+
   const [callStatus, setCallStatus] = useState("idle");
   const [error, setError] = useState("");
 
@@ -74,23 +100,19 @@ function useWebRTC({ socket, joined, interviewId }) {
     packetLoss: null,
   });
 
-  // Close the current peer connection.
-  const closePeerConnection = useCallback(() => {
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.ontrack = null;
-      peerConnectionRef.current.onicecandidate = null;
-      peerConnectionRef.current.onconnectionstatechange = null;
+  // --------------------------------------------------
+  // Local media lifecycle
+  // --------------------------------------------------
 
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
-
-    pendingCandidatesRef.current = [];
-    setRemoteStream(null);
-  }, []);
-
-  // Stop all local media tracks.
   const stopLocalMedia = useCallback(() => {
+    // Invalidate any pending media request.
+    mediaRequestIdRef.current += 1;
+
+    mediaAllowedRef.current = false;
+    mediaReadyRef.current = false;
+
+    mediaInitializationRef.current = null;
+
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => {
         track.stop();
@@ -98,9 +120,117 @@ function useWebRTC({ socket, joined, interviewId }) {
 
       localStreamRef.current = null;
     }
+
+    setLocalStream(null);
   }, []);
 
-  // Create a peer connection.
+  const ensureLocalMedia = useCallback(async () => {
+    if (!mediaAllowedRef.current || !mountedRef.current) {
+      return null;
+    }
+
+    // Reuse an existing stream.
+    if (localStreamRef.current?.active) {
+      return localStreamRef.current;
+    }
+
+    // Prevent duplicate getUserMedia requests.
+    if (mediaInitializationRef.current) {
+      return mediaInitializationRef.current;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error(
+        "Camera and microphone access requires HTTPS or localhost.",
+      );
+    }
+
+    const requestId = ++mediaRequestIdRef.current;
+
+    let requestPromise;
+
+    requestPromise = navigator.mediaDevices
+      .getUserMedia({
+        audio: true,
+        video: true,
+      })
+      .then((stream) => {
+        // Do not retain streams from cancelled requests.
+        if (
+          !mountedRef.current ||
+          !mediaAllowedRef.current ||
+          requestId !== mediaRequestIdRef.current
+        ) {
+          stream.getTracks().forEach((track) => track.stop());
+          return null;
+        }
+
+        const settings = mediaSettingsRef.current;
+
+        stream.getAudioTracks().forEach((track) => {
+          track.enabled = settings.micEnabled;
+        });
+
+        stream.getVideoTracks().forEach((track) => {
+          track.enabled = settings.cameraEnabled;
+        });
+
+        localStreamRef.current = stream;
+        mediaReadyRef.current = true;
+
+        setLocalStream(stream);
+
+        return stream;
+      })
+      .finally(() => {
+        if (mediaInitializationRef.current === requestPromise) {
+          mediaInitializationRef.current = null;
+        }
+      });
+
+    mediaInitializationRef.current = requestPromise;
+
+    return requestPromise;
+  }, []);
+
+  // Track component mount/unmount independently of socket state.
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+
+      stopLocalMedia();
+    };
+  }, [stopLocalMedia]);
+
+  // --------------------------------------------------
+  // Peer connection cleanup
+  // --------------------------------------------------
+
+  const closePeerConnection = useCallback(() => {
+    const peerConnection = peerConnectionRef.current;
+
+    if (peerConnection) {
+      peerConnection.ontrack = null;
+      peerConnection.onicecandidate = null;
+      peerConnection.onconnectionstatechange = null;
+      peerConnection.oniceconnectionstatechange = null;
+
+      peerConnection.close();
+
+      peerConnectionRef.current = null;
+    }
+
+    pendingCandidatesRef.current = [];
+
+    setRemoteStream(null);
+  }, []);
+
+  // --------------------------------------------------
+  // Peer connection creation
+  // --------------------------------------------------
+
   const createPeerConnection = useCallback(
     (peerId) => {
       if (peerConnectionRef.current) {
@@ -112,30 +242,54 @@ function useWebRTC({ socket, joined, interviewId }) {
       peerConnectionRef.current = peerConnection;
       remotePeerIdRef.current = peerId;
 
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => {
-          peerConnection.addTrack(track, localStreamRef.current);
+      // Attach existing local tracks.
+      const stream = localStreamRef.current;
+
+      if (stream) {
+        stream.getTracks().forEach((track) => {
+          peerConnection.addTrack(track, stream);
         });
       }
 
+      // Send ICE candidates.
       peerConnection.onicecandidate = (event) => {
-        if (!event.candidate || !socket?.connected || !peerId) return;
+        if (!event.candidate || !socket?.connected || !peerId) {
+          return;
+        }
 
-        socket.emit("webrtc:ice-candidate", {
-          peerId,
-          candidate: event.candidate.toJSON(),
-        });
+        socket.timeout(SIGNALING_TIMEOUT).emit(
+          "webrtc:ice-candidate",
+          {
+            peerId,
+            candidate: event.candidate.toJSON(),
+          },
+          (timeoutError, response) => {
+            if (timeoutError || !response?.success) {
+              console.error(
+                "ICE candidate relay failed:",
+                timeoutError || response?.message,
+              );
+            }
+          },
+        );
       };
 
+      // Receive remote media.
       peerConnection.ontrack = (event) => {
         const stream =
           event.streams?.[0] || new MediaStream([event.track]);
 
         setRemoteStream(stream);
         setCallStatus("connected");
+        setError("");
       };
 
+      // Monitor connection state.
       peerConnection.onconnectionstatechange = () => {
+        if (peerConnectionRef.current !== peerConnection) {
+          return;
+        }
+
         const state = peerConnection.connectionState;
 
         console.log("WebRTC connection state:", state);
@@ -153,7 +307,7 @@ function useWebRTC({ socket, joined, interviewId }) {
         } else if (state === "failed") {
           setCallStatus("reconnecting");
           setError(
-            "Connection lost. Waiting for signaling reconnection...",
+            "Connection lost. Waiting for signaling reconnection.",
           );
         } else if (state === "closed") {
           setCallStatus("ended");
@@ -165,11 +319,17 @@ function useWebRTC({ socket, joined, interviewId }) {
     [socket],
   );
 
-  // Process queued ICE candidates.
+  // --------------------------------------------------
+  // ICE candidate handling
+  // --------------------------------------------------
+
   const flushPendingCandidates = useCallback(async (peerConnection) => {
-    if (!peerConnection.remoteDescription) return;
+    if (!peerConnection.remoteDescription) {
+      return;
+    }
 
     const candidates = [...pendingCandidatesRef.current];
+
     pendingCandidatesRef.current = [];
 
     for (const candidate of candidates) {
@@ -186,11 +346,16 @@ function useWebRTC({ socket, joined, interviewId }) {
     }
   }, []);
 
-  // Create and send an offer.
+  // --------------------------------------------------
+  // Send WebRTC offer
+  // --------------------------------------------------
+
   const createOffer = useCallback(
     async (peerId) => {
       try {
-        console.log("Creating WebRTC offer for peer:", peerId);
+        if (!socket?.connected) {
+          throw new Error("Signaling connection is unavailable.");
+        }
 
         const peerConnection = createPeerConnection(peerId);
 
@@ -198,40 +363,53 @@ function useWebRTC({ socket, joined, interviewId }) {
 
         await peerConnection.setLocalDescription(offer);
 
-        socket.emit(
+        socket.timeout(SIGNALING_TIMEOUT).emit(
           "webrtc:offer",
           {
             peerId,
             sdp: peerConnection.localDescription,
           },
-          (response) => {
-            console.log("WebRTC offer acknowledgement:", response);
-
-            if (response && !response.success) {
+          (timeoutError, response) => {
+            if (timeoutError || !response?.success) {
               setError(
-                response.message || "Unable to send call offer.",
+                response?.message || "Unable to send call offer.",
               );
+
+              return;
             }
+
+            setCallStatus("connecting");
           },
         );
 
         setCallStatus("connecting");
       } catch (offerError) {
         console.error("WebRTC offer error:", offerError);
-        setError("Unable to start the video call.");
+
+        setError(
+          offerError.message || "Unable to start the video call.",
+        );
+
         setCallStatus("failed");
       }
     },
     [createPeerConnection, socket],
   );
 
-  // Handle an incoming offer.
+  // --------------------------------------------------
+  // Handle incoming offer
+  // --------------------------------------------------
+
   const handleOffer = useCallback(
     async (data = {}) => {
       try {
-        console.log("Received WebRTC offer:", data);
+        if (!data.peerId || !data.sdp) {
+          return;
+        }
 
-        if (!data.peerId || !data.sdp) return;
+        if (!socket?.connected) {
+          return;
+        }
 
         remotePeerIdRef.current = data.peerId;
 
@@ -247,18 +425,16 @@ function useWebRTC({ socket, joined, interviewId }) {
 
         await peerConnection.setLocalDescription(answer);
 
-        socket.emit(
+        socket.timeout(SIGNALING_TIMEOUT).emit(
           "webrtc:answer",
           {
             peerId: data.peerId,
             sdp: peerConnection.localDescription,
           },
-          (response) => {
-            console.log("WebRTC answer acknowledgement:", response);
-
-            if (response && !response.success) {
+          (timeoutError, response) => {
+            if (timeoutError || !response?.success) {
               setError(
-                response.message || "Unable to send call answer.",
+                response?.message || "Unable to send call answer.",
               );
             }
           },
@@ -267,21 +443,25 @@ function useWebRTC({ socket, joined, interviewId }) {
         setCallStatus("connecting");
       } catch (offerError) {
         console.error("WebRTC offer handling error:", offerError);
+
         setError("Unable to process the incoming call.");
       }
     },
     [createPeerConnection, flushPendingCandidates, socket],
   );
 
-  // Handle an incoming answer.
+  // --------------------------------------------------
+  // Handle incoming answer
+  // --------------------------------------------------
+
   const handleAnswer = useCallback(
     async (data = {}) => {
       try {
-        console.log("Received WebRTC answer:", data);
-
         const peerConnection = peerConnectionRef.current;
 
-        if (!peerConnection || !data.sdp) return;
+        if (!peerConnection || !data.sdp) {
+          return;
+        }
 
         await peerConnection.setRemoteDescription(
           new RTCSessionDescription(data.sdp),
@@ -290,16 +470,22 @@ function useWebRTC({ socket, joined, interviewId }) {
         await flushPendingCandidates(peerConnection);
       } catch (answerError) {
         console.error("WebRTC answer error:", answerError);
+
         setError("Unable to establish the video connection.");
       }
     },
     [flushPendingCandidates],
   );
 
-  // Handle incoming ICE candidates.
+  // --------------------------------------------------
+  // Handle incoming ICE candidate
+  // --------------------------------------------------
+
   const handleIceCandidate = useCallback(async (data = {}) => {
     try {
-      if (!data.candidate) return;
+      if (!data.candidate) {
+        return;
+      }
 
       const peerConnection = peerConnectionRef.current;
 
@@ -316,7 +502,10 @@ function useWebRTC({ socket, joined, interviewId }) {
     }
   }, []);
 
-  // Leave the video call and release resources.
+  // --------------------------------------------------
+  // Leave call
+  // --------------------------------------------------
+
   const leaveCall = useCallback(() => {
     console.log("Leaving WebRTC call:", {
       interviewId,
@@ -342,15 +531,18 @@ function useWebRTC({ socket, joined, interviewId }) {
     stopLocalMedia();
 
     remotePeerIdRef.current = null;
+
     pendingCandidatesRef.current = [];
 
-    setLocalStream(null);
     setRemoteStream(null);
     setRemoteName("");
+
     setRemoteCameraEnabled(true);
     setRemoteMicEnabled(true);
+
     setCallStatus("ended");
     setError("");
+
     setConnectionQuality("unknown");
 
     setConnectionMetrics({
@@ -358,9 +550,17 @@ function useWebRTC({ socket, joined, interviewId }) {
       jitter: null,
       packetLoss: null,
     });
-  }, [closePeerConnection, stopLocalMedia, socket, interviewId]);
+  }, [
+    closePeerConnection,
+    stopLocalMedia,
+    socket,
+    interviewId,
+  ]);
 
-  // Start media and join the WebRTC signaling room.
+  // --------------------------------------------------
+  // WebRTC signaling lifecycle
+  // --------------------------------------------------
+
   useEffect(() => {
     if (!socket || !joined || !interviewId || !socket.connected) {
       return;
@@ -368,16 +568,22 @@ function useWebRTC({ socket, joined, interviewId }) {
 
     let cancelled = false;
 
-    const handlePeerJoined = (data = {}) => {
-      console.log("WEBRTC PEER JOINED:", data);
+    // ----------------------------------------------
+    // Signaling event handlers
+    // ----------------------------------------------
 
-      if (!data.peerId) return;
+    const handlePeerJoined = (data = {}) => {
+      if (!data.peerId) {
+        return;
+      }
 
       remotePeerIdRef.current = data.peerId;
 
       setRemoteName(data.name || "Participant");
+
       setRemoteCameraEnabled(data.cameraEnabled !== false);
       setRemoteMicEnabled(data.micEnabled !== false);
+
       setCallStatus("waiting");
     };
 
@@ -404,8 +610,6 @@ function useWebRTC({ socket, joined, interviewId }) {
     };
 
     const handlePeerLeft = (data = {}) => {
-      console.log("WEBRTC PEER LEFT:", data);
-
       if (
         data.peerId &&
         data.peerId !== remotePeerIdRef.current
@@ -418,9 +622,12 @@ function useWebRTC({ socket, joined, interviewId }) {
       remotePeerIdRef.current = null;
 
       setRemoteName("");
+
       setCallStatus("waiting");
+
       setRemoteCameraEnabled(true);
       setRemoteMicEnabled(true);
+
       setConnectionQuality("unknown");
 
       setConnectionMetrics({
@@ -436,59 +643,64 @@ function useWebRTC({ socket, joined, interviewId }) {
       setError(data.message || "WebRTC signaling error.");
     };
 
+    // ----------------------------------------------
+    // Register listeners before joining
+    // ----------------------------------------------
+
+    socket.on("webrtc:offer", handleOffer);
+    socket.on("webrtc:answer", handleAnswer);
+    socket.on("webrtc:ice-candidate", handleIceCandidate);
+
+    socket.on("webrtc:peer-joined", handlePeerJoined);
+    socket.on("webrtc:peer-left", handlePeerLeft);
+
+    socket.on("webrtc:error", handleSocketError);
+
+    socket.on("webrtc:camera-state", handleRemoteCameraState);
+    socket.on("webrtc:mic-state", handleRemoteMicState);
+
+    // ----------------------------------------------
+    // Start call
+    // ----------------------------------------------
+
     const startCall = async () => {
       try {
         setError("");
 
-        if (!navigator.mediaDevices?.getUserMedia) {
-          throw new Error(
-            "Camera and microphone access requires HTTPS or localhost.",
-          );
-        }
+        // Media is acquired only when the interview room
+        // has successfully joined.
+        mediaAllowedRef.current = true;
 
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-          video: true,
-        });
+        const stream = await ensureLocalMedia();
 
-        if (cancelled) {
-          stream.getTracks().forEach((track) => track.stop());
+        if (cancelled || !stream) {
           return;
         }
 
-        // Apply saved media preferences.
-        stream.getAudioTracks().forEach((track) => {
-          track.enabled = initialMediaSettings.micEnabled;
-        });
-
-        stream.getVideoTracks().forEach((track) => {
-          track.enabled = initialMediaSettings.cameraEnabled;
-        });
-
-        localStreamRef.current = stream;
-        setLocalStream(stream);
-
-        // Register signaling listeners.
-        socket.on("webrtc:offer", handleOffer);
-        socket.on("webrtc:answer", handleAnswer);
-        socket.on("webrtc:ice-candidate", handleIceCandidate);
-        socket.on("webrtc:peer-joined", handlePeerJoined);
-        socket.on("webrtc:peer-left", handlePeerLeft);
-        socket.on("webrtc:error", handleSocketError);
-        socket.on("webrtc:camera-state", handleRemoteCameraState);
-        socket.on("webrtc:mic-state", handleRemoteMicState);
+        if (!socket.connected) {
+          return;
+        }
 
         setCallStatus("waiting");
 
-        // Join the WebRTC room.
-        socket.emit(
+        socket.timeout(SIGNALING_TIMEOUT).emit(
           "webrtc:join",
           {
             interviewId,
-            cameraEnabled: initialMediaSettings.cameraEnabled,
-            micEnabled: initialMediaSettings.micEnabled,
+            cameraEnabled: mediaSettingsRef.current.cameraEnabled,
+            micEnabled: mediaSettingsRef.current.micEnabled,
           },
-          async (response) => {
+          async (timeoutError, response) => {
+            if (cancelled) {
+              return;
+            }
+
+            if (timeoutError) {
+              setError("Joining the video call timed out.");
+              setCallStatus("failed");
+              return;
+            }
+
             console.log("WEBRTC JOIN RESPONSE:", {
               interviewId,
               success: response?.success,
@@ -496,8 +708,6 @@ function useWebRTC({ socket, joined, interviewId }) {
               peers: response?.peers,
               socketId: socket.id,
             });
-
-            if (cancelled) return;
 
             if (!response?.success) {
               setError(
@@ -513,11 +723,6 @@ function useWebRTC({ socket, joined, interviewId }) {
             const existingPeer = response.peers?.[0];
 
             if (existingPeer?.peerId) {
-              console.log(
-                "Existing WebRTC peer found. Starting offer:",
-                existingPeer,
-              );
-
               remotePeerIdRef.current = existingPeer.peerId;
 
               setRemoteName(
@@ -534,13 +739,11 @@ function useWebRTC({ socket, joined, interviewId }) {
 
               await createOffer(existingPeer.peerId);
             } else {
-              console.log(
-                "No existing WebRTC peer. Waiting for participant.",
-              );
-
               setRemoteName("");
+
               setRemoteCameraEnabled(true);
               setRemoteMicEnabled(true);
+
               setCallStatus("waiting");
             }
           },
@@ -563,53 +766,63 @@ function useWebRTC({ socket, joined, interviewId }) {
 
     startCall();
 
+    // ----------------------------------------------
+    // Signaling cleanup
+    // ----------------------------------------------
+
     return () => {
       cancelled = true;
 
-      // Remove signaling listeners.
       socket.off("webrtc:offer", handleOffer);
       socket.off("webrtc:answer", handleAnswer);
       socket.off("webrtc:ice-candidate", handleIceCandidate);
+
       socket.off("webrtc:peer-joined", handlePeerJoined);
       socket.off("webrtc:peer-left", handlePeerLeft);
+
       socket.off("webrtc:error", handleSocketError);
+
       socket.off("webrtc:camera-state", handleRemoteCameraState);
       socket.off("webrtc:mic-state", handleRemoteMicState);
 
-      // Leave signaling room if this effect joined it.
+      // Leave the signaling room when possible.
       if (socket.connected && webrtcJoinedRef.current) {
         socket.emit("webrtc:leave");
       }
 
       webrtcJoinedRef.current = false;
 
-      // Stop connection quality monitoring.
+      // Stop statistics monitoring.
       if (statsIntervalRef.current) {
         clearInterval(statsIntervalRef.current);
         statsIntervalRef.current = null;
       }
 
-      // Close peer connection and release local media.
+      // Close the old peer connection.
+      // IMPORTANT: Do not stop local media here.
+      // The same stream is reused after socket reconnection.
       closePeerConnection();
-      stopLocalMedia();
 
       remotePeerIdRef.current = null;
+
       pendingCandidatesRef.current = [];
     };
   }, [
     socket,
     joined,
     interviewId,
-    initialMediaSettings,
+    ensureLocalMedia,
     createOffer,
     handleOffer,
     handleAnswer,
     handleIceCandidate,
     closePeerConnection,
-    stopLocalMedia,
   ]);
 
-  // Monitor WebRTC connection quality.
+  // --------------------------------------------------
+  // Connection quality monitoring
+  // --------------------------------------------------
+
   useEffect(() => {
     const activeStatuses = [
       "connecting",
@@ -636,10 +849,13 @@ function useWebRTC({ socket, joined, interviewId }) {
       try {
         const stats = await peerConnection.getStats();
 
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
 
         let rtt = null;
         let jitter = null;
+
         let packetsReceived = 0;
         let packetsLost = 0;
 
@@ -741,9 +957,17 @@ function useWebRTC({ socket, joined, interviewId }) {
     };
   }, [callStatus]);
 
-  // Toggle microphone.
+  // --------------------------------------------------
+  // Toggle microphone
+  // --------------------------------------------------
+
   const toggleMicrophone = useCallback(() => {
     const nextEnabled = !micEnabled;
+
+    mediaSettingsRef.current = {
+      ...mediaSettingsRef.current,
+      micEnabled: nextEnabled,
+    };
 
     localStreamRef.current?.getAudioTracks().forEach((track) => {
       track.enabled = nextEnabled;
@@ -751,24 +975,27 @@ function useWebRTC({ socket, joined, interviewId }) {
 
     setMicEnabled(nextEnabled);
 
-    saveMediaSettings({
-      micEnabled: nextEnabled,
-      cameraEnabled,
-    });
-
-    const activePeerId = remotePeerIdRef.current;
+    saveMediaSettings(mediaSettingsRef.current);
 
     if (socket?.connected) {
       socket.emit("webrtc:mic-state", {
-        peerId: activePeerId,
+        peerId: remotePeerIdRef.current,
         micEnabled: nextEnabled,
       });
     }
-  }, [micEnabled, cameraEnabled, socket]);
+  }, [micEnabled, socket]);
 
-  // Toggle camera.
+  // --------------------------------------------------
+  // Toggle camera
+  // --------------------------------------------------
+
   const toggleCamera = useCallback(() => {
     const nextEnabled = !cameraEnabled;
+
+    mediaSettingsRef.current = {
+      ...mediaSettingsRef.current,
+      cameraEnabled: nextEnabled,
+    };
 
     localStreamRef.current?.getVideoTracks().forEach((track) => {
       track.enabled = nextEnabled;
@@ -776,35 +1003,40 @@ function useWebRTC({ socket, joined, interviewId }) {
 
     setCameraEnabled(nextEnabled);
 
-    saveMediaSettings({
-      micEnabled,
-      cameraEnabled: nextEnabled,
-    });
-
-    const activePeerId = remotePeerIdRef.current;
+    saveMediaSettings(mediaSettingsRef.current);
 
     if (socket?.connected) {
       socket.emit("webrtc:camera-state", {
-        peerId: activePeerId,
+        peerId: remotePeerIdRef.current,
         cameraEnabled: nextEnabled,
       });
     }
-  }, [micEnabled, cameraEnabled, socket]);
+  }, [cameraEnabled, socket]);
+
+  // --------------------------------------------------
+  // Return hook values
+  // --------------------------------------------------
 
   return {
     localStream,
     remoteStream,
     remoteName,
+
     callStatus,
     error,
+
     micEnabled,
     cameraEnabled,
+
     remoteCameraEnabled,
     remoteMicEnabled,
+
     connectionQuality,
     connectionMetrics,
+
     toggleMicrophone,
     toggleCamera,
+
     leaveCall,
   };
 }

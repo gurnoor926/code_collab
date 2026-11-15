@@ -4,6 +4,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 
 import ProtectedRoute from "./components/routes/ProtectedRoute";
 import GuestRoute from "./components/routes/GuestRoute";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 // Authentication pages
 const Login = lazy(() => import("./pages/auth/Login"));
@@ -75,6 +76,7 @@ function PageLoader() {
 
 function App() {
   return (
+    <ErrorBoundary>
     <Suspense fallback={<PageLoader />}>
       <Routes>
         {/* Public guest routes */}
@@ -146,6 +148,7 @@ function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
+    </ErrorBoundary>
   );
 }
 

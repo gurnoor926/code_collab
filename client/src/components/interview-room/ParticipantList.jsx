@@ -1,33 +1,52 @@
-import { memo } from "react";
+
+import { memo, useMemo } from "react";
 import { Circle, UserRound } from "lucide-react";
 
-const ParticipantCard = memo(function ParticioantCard({
+const getUserId = (user) => {
+  const id = user?._id || user?.id || user?.userId;
+
+  if (!id) return "";
+
+  // Support populated MongoDB references.
+  if (typeof id === "object") {
+    return String(id._id || id.id || "");
+  }
+
+  return String(id);
+};
+
+const ParticipantCard = memo(function ParticipantCard({
   user,
+  title,
   isCurrentUser = false,
   isOnline = false,
 }) {
-  const name = user?.name || "Waiting for participant";
+  const name = user?.name || title || "Waiting for participant";
 
   return (
     <div className="flex items-center gap-3 rounded-xl border border-white/5 bg-[#181823] p-3">
-      <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-500/15 text-indigo-400">
+      {/* Avatar */}
+      <div className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-indigo-500/15 text-indigo-400">
         {user?.avatar ? (
           <img
             src={user.avatar}
-            alt={name}
-            className="h-full w-full rounded-full object-cover"
+            alt={`${name}'s avatar`}
+            loading="lazy"
+            className="h-full w-full object-cover"
           />
         ) : (
           <UserRound size={19} />
         )}
 
         <span
-          className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[#181823] ${
+          className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#181823] ${
             isOnline ? "bg-emerald-400" : "bg-zinc-500"
           }`}
+          aria-label={isOnline ? "Online" : "Offline"}
         />
       </div>
 
+      {/* User details */}
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-white">
           {name}
@@ -40,26 +59,19 @@ const ParticipantCard = memo(function ParticioantCard({
         </p>
 
         <p className="mt-0.5 text-xs text-zinc-500">
-          {isOnline ? "Online" : "Offline"}
+          {title}
         </p>
       </div>
 
-      <div className="flex items-center gap-1.5">
-        <Circle
-          size={8}
-          fill="currentColor"
-          className={
-            isOnline ? "text-emerald-400" : "text-zinc-600"
-          }
-        />
-
-        <span
-          className={`text-[10px] ${
-            isOnline ? "text-emerald-400" : "text-zinc-500"
-          }`}
-        >
-          {isOnline ? "Online" : "Offline"}
-        </span>
+      {/* Connection status */}
+      <div
+        className={`flex shrink-0 items-center gap-1.5 text-[10px] ${
+          isOnline ? "text-emerald-400" : "text-zinc-500"
+        }`}
+        role="status"
+      >
+        <Circle size={8} fill="currentColor" />
+        {isOnline ? "Online" : "Offline"}
       </div>
     </div>
   );
@@ -72,39 +84,43 @@ const ParticipantList = memo(function ParticipantList({
   connected = false,
   joined = false,
 }) {
-  const currentUserId = String(
-    currentUser?._id || currentUser?.id || ""
-  );
+  const currentUserId = getUserId(currentUser);
+
+  const onlineUserIds = useMemo(() => {
+    return new Set(
+      participants
+        .map((participant) => getUserId(participant))
+        .filter(Boolean)
+    );
+  }, [participants]);
 
   const isSameUser = (person) => {
-    const personId = person?._id || person?.id;
+    const personId = getUserId(person);
 
-    return (
+    return Boolean(
       personId &&
       currentUserId &&
-      String(personId) === currentUserId
+      personId === currentUserId
     );
   };
 
   const isParticipantOnline = (person) => {
+    if (!person || !getUserId(person)) {
+      return false;
+    }
+
     if (isSameUser(person)) {
       return connected && joined;
     }
 
-    const personId = String(person?._id || person?.id || "");
-
-    return participants.some(
-      (participant) =>
-        String(participant.userId || participant._id || participant.id) ===
-        personId
-    );
+    return onlineUserIds.has(getUserId(person));
   };
 
   const interviewer = interview?.interviewer;
   const candidate = interview?.candidate;
 
   return (
-    <section className="space-y-3">
+    <section className="space-y-3" aria-label="Interview participants">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-white">
           Participants
@@ -119,14 +135,14 @@ const ParticipantList = memo(function ParticipantList({
         title="Interviewer"
         user={interviewer}
         isCurrentUser={isSameUser(interviewer)}
-        isOnline={Boolean(interviewer && isParticipantOnline(interviewer))}
+        isOnline={isParticipantOnline(interviewer)}
       />
 
       <ParticipantCard
         title="Candidate"
         user={candidate}
         isCurrentUser={isSameUser(candidate)}
-        isOnline={Boolean(candidate && isParticipantOnline(candidate))}
+        isOnline={isParticipantOnline(candidate)}
       />
     </section>
   );

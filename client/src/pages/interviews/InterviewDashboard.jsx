@@ -1,353 +1,277 @@
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import {
-  CalendarPlus,
-  Code2,
-  Plus,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  ArrowLeft,
+  LoaderCircle,
   RefreshCw,
-  Search,
-  Video,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
-import { useAuth } from "../../hooks/useAuth";
-import AppLayout from "../../components/layout/AppLayout";
-import InterviewStats from "../../components/interviews/InterviewStats";
-import InterviewCard from "../../components/interviews/InterviewCard";
-import InterviewEmptyState from "../../components/interviews/InterviewEmptyState";
 import interviewService from "../../services/interviewService";
+import replayService from "../../services/replayService";
+import { useAuth } from "../../hooks/useAuth";
 
-function InterviewDashboard() {
+import InterviewDetailsCard from "../../components/interviews/InterviewDetailsCard";
+import InterviewParticipants from "../../components/interviews/InterviewParticipants";
+import InterviewProblemList from "../../components/interviews/InterviewProblemList";
+import InterviewActions from "../../components/interviews/InterviewActions";
+
+function InterviewDetails() {
+  const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  const role = user?.role || "candidate";
-  const isInterviewer = ["interviewer", "admin"].includes(role);
-
-  const [interviews, setInterviews] = useState([]);
+  const [interview, setInterview] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  // Prevent stale requests from updating the page.
+  const requestIdRef = useRef(0);
 
-  const [stats, setStats] = useState({
-    total: 0,
-    upcoming: 0,
-    completed: 0,
-    active: 0,
-  });
+  // Prevent multiple actions from starting simultaneously.
+  const actionInProgressRef = useRef(false);
 
-  // Fetch all interviews
-  const fetchInterviews = useCallback(async () => {
+  // Fetch interview details.
+  const fetchInterview = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
+
     try {
-      setError("");
       setLoading(true);
+      setError("");
 
-      // The backend allows a maximum limit of 50.
-      const firstResponse = await interviewService.getMyInterviews({
-        page: 1,
-        limit: 50,
-      });
+      const response = await interviewService.getInterviewById(id);
 
-      const firstPage = firstResponse?.data || [];
-      const totalPages = firstResponse?.pagination?.totalPages || 1;
+      if (requestId !== requestIdRef.current) return;
 
-      let allInterviews = [...firstPage];
-
-      // Retrieve remaining pages so statistics use all records.
-      if (totalPages > 1) {
-        const remainingResponses = await Promise.all(
-          Array.from({ length: totalPages - 1 }, (_, index) =>
-            interviewService.getMyInterviews({
-              page: index + 2,
-              limit: 50,
-            })
-          )
+      if (!response?.success || !response?.data) {
+        throw new Error(
+          response?.message || "Unable to load interview details."
         );
-
-        remainingResponses.forEach((response) => {
-          allInterviews.push(...(response?.data || []));
-        });
       }
 
-      setInterviews(allInterviews);
-
-      setStats({
-        total: firstResponse?.pagination?.total ?? allInterviews.length,
-
-        upcoming: allInterviews.filter((item) =>
-          ["scheduled", "waiting"].includes(
-            item.status?.toLowerCase()
-          )
-        ).length,
-
-        completed: allInterviews.filter(
-          (item) => item.status?.toLowerCase() === "completed"
-        ).length,
-
-        active: allInterviews.filter(
-          (item) => item.status?.toLowerCase() === "active"
-        ).length,
-      });
+      setInterview(response.data);
     } catch (err) {
+      if (requestId !== requestIdRef.current) return;
+
       const message =
+        err.userMessage ||
         err.response?.data?.message ||
-        "Unable to load your interviews.";
+        err.message ||
+        "Failed to load interview.";
 
       setError(message);
-      setInterviews([]);
-      toast.error(message);
+      setInterview(null);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
-  }, []);
+  }, [id]);
 
-  // Initial fetch
+  // Initial fetch.
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchInterviews();
+      fetchInterview();
     }, 0);
 
-    return () => clearTimeout(timer);
-  }, [fetchInterviews]);
+    return () => {
+      clearTimeout(timer);
+      requestIdRef.current += 1;
+    };
+  }, [fetchInterview]);
 
-  // Search and status filtering
-  const filteredInterviews = useMemo(() => {
-    return interviews.filter((interview) => {
-      const matchesSearch =
-        interview.title?.toLowerCase().includes(search.toLowerCase()) ||
-        interview.description?.toLowerCase().includes(search.toLowerCase()) ||
-        interview.roomCode?.toLowerCase().includes(search.toLowerCase());
+  // Execute interview actions safely.
+  const performAction = async (action, successMessage) => {
+    if (actionInProgressRef.current) return;
 
-      const matchesStatus =
-        statusFilter === "all" ||
-        interview.status?.toLowerCase() === statusFilter;
+    actionInProgressRef.current = true;
+    setActionLoading(true);
 
-      return matchesSearch && matchesStatus;
-    });
-  }, [interviews, search, statusFilter]);
+    try {
+      const response = await action(id);
 
-  // Refresh interviews
-  const handleRefresh = () => {
-    setRefreshing(true);
-    fetchInterviews();
+      if (response?.success === false) {
+        throw new Error(response.message || "Action failed.");
+      }
+
+      toast.success(response?.message || successMessage);
+
+      await fetchInterview();
+    } catch (err) {
+      const message =
+        err.userMessage ||
+        err.response?.data?.message ||
+        err.message ||
+        "Something went wrong.";
+
+      toast.error(message);
+    } finally {
+      actionInProgressRef.current = false;
+      setActionLoading(false);
+    }
   };
 
-  // Navigate to create interview
-  const handleCreateInterview = () => {
-    navigate("/interviews/create");
-  };
+  // Cancel interview.
+  const handleCancel = () => {
+    if (actionLoading) return;
 
-  // Open interview details
-  const handleOpenInterview = (interview) => {
-    if (!interview?._id) {
-      toast.error("Invalid interview ID.");
+    if (!window.confirm("Are you sure you want to cancel this interview?")) {
       return;
     }
 
-    navigate(`/interviews/${interview._id}`);
+    performAction(
+      interviewService.cancelInterview,
+      "Interview cancelled successfully."
+    );
   };
 
-  return (
-    <AppLayout>
-      <div className="mx-auto max-w-7xl space-y-8">
+  // Start interview and initialize replay.
+  const handleStart = () => {
+    if (actionLoading) return;
 
-        {/* Header */}
-        <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#1d1b36] via-[#151522] to-[#11111b] p-6 sm:p-8">
-          <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-indigo-500/10 blur-3xl" />
+    performAction(
+      async (interviewId) => {
+        const response =
+          await interviewService.startInterview(interviewId);
 
-          <div className="relative flex flex-col justify-between gap-6 md:flex-row md:items-center">
-            <div>
-              <div className="mb-3 flex items-center gap-2 text-indigo-400">
-                <Video size={19} />
-                <span className="text-sm font-medium">
-                  CodeCollab Interviews
-                </span>
-              </div>
+        try {
+          await replayService.startReplay(interviewId, {
+            initialCode: "",
+            initialLanguage: "javascript",
+          });
+        } catch (err) {
+          console.warn("Replay start notice:", err?.message);
+        }
 
-              <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
-                Interview Dashboard
-              </h1>
+        return response;
+      },
+      "Interview started successfully."
+    );
+  };
 
-              <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-400">
-                {isInterviewer
-                  ? "Create and manage technical interviews, track candidates, and monitor interview progress."
-                  : "Manage your interview sessions, prepare for upcoming interviews, and track your progress."}
-              </p>
-            </div>
+  // Complete interview and finalize replay.
+  const handleComplete = () => {
+    if (actionLoading) return;
 
-            {isInterviewer && (
-              <button
-                onClick={handleCreateInterview}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-950/30 transition hover:bg-indigo-500"
-              >
-                <Plus size={18} />
-                Create Interview
-              </button>
-            )}
-          </div>
+    if (!window.confirm("Mark this interview as completed?")) {
+      return;
+    }
 
-          <div className="relative mt-8 grid gap-3 border-t border-white/10 pt-6 sm:grid-cols-2">
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-white/5 p-2.5 text-indigo-400">
-                <Code2 size={19} />
-              </div>
+    performAction(
+      async (interviewId) => {
+        try {
+          await replayService.completeReplay(interviewId);
+        } catch (err) {
+          console.warn("Replay complete notice:", err?.message);
+        }
 
-              <div>
-                <p className="text-sm font-medium text-white">
-                  Collaborative Coding
-                </p>
-                <p className="text-xs text-zinc-500">
-                  Solve problems together
-                </p>
-              </div>
-            </div>
+        return interviewService.completeInterview(interviewId);
+      },
+      "Interview completed successfully."
+    );
+  };
 
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-white/5 p-2.5 text-emerald-400">
-                <CalendarPlus size={19} />
-              </div>
+  // Navigation handlers.
+  const handleJoin = () => {
+    navigate(`/interviews/${id}/room`);
+  };
 
-              <div>
-                <p className="text-sm font-medium text-white">
-                  Structured Sessions
-                </p>
-                <p className="text-xs text-zinc-500">
-                  Manage interview schedules
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
+  const handleEvaluate = () => {
+    navigate(`/interviews/${id}/evaluation`);
+  };
 
-        {/* Statistics */}
-        <section className="space-y-4">
-          <div>
-            <h2 className="text-lg font-semibold text-white">
-              Interview Overview
-            </h2>
-            <p className="mt-1 text-sm text-zinc-500">
-              A summary of your interview activity.
-            </p>
-          </div>
+  const handleViewScorecard = () => {
+    navigate(`/interviews/${id}/scorecard`);
+  };
 
-          <InterviewStats stats={stats} loading={loading} />
-        </section>
+  const handleViewReplay = () => {
+    navigate(`/interviews/${id}/replay`);
+  };
 
-        {/* Interview list */}
-        <section className="space-y-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-white">
-                Your Interviews
-              </h2>
-              <p className="mt-1 text-sm text-zinc-500">
-                View and manage your interview sessions.
-              </p>
-            </div>
-
-            <button
-              onClick={handleRefresh}
-              disabled={loading}
-              className="inline-flex items-center justify-center gap-2 self-start rounded-xl border border-white/10 bg-[#14141d] px-4 py-2.5 text-sm text-zinc-300 transition hover:border-indigo-500/40 hover:text-white disabled:opacity-50"
-            >
-              <RefreshCw
-                size={15}
-                className={refreshing ? "animate-spin" : ""}
-              />
-              Refresh
-            </button>
-          </div>
-
-          {/* Search and status filters */}
-          <div className="grid gap-3 sm:grid-cols-[1fr_200px]">
-            <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-[#14141d] px-4">
-              <Search size={17} className="text-zinc-500" />
-
-              <input
-                type="text"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by title, description or room code..."
-                className="w-full bg-transparent py-3 text-sm text-white outline-none placeholder:text-zinc-600"
-              />
-            </div>
-
-            <select
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
-              className="rounded-xl border border-white/10 bg-[#14141d] px-4 py-3 text-sm text-zinc-300 outline-none focus:border-indigo-500"
-            >
-              <option value="all">All statuses</option>
-              <option value="scheduled">Scheduled</option>
-              <option value="waiting">Waiting</option>
-              <option value="active">Active</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </div>
-
-          {/* Loading state */}
-          {loading ? (
-            <div className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-2xl border border-white/10 bg-[#14141d]">
-              <RefreshCw
-                size={26}
-                className="animate-spin text-indigo-400"
-              />
-              <p className="text-sm text-zinc-400">
-                Loading your interviews...
-              </p>
-            </div>
-          ) : error ? (
-            /* Error state */
-            <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-8 text-center">
-              <p className="text-sm text-red-400">{error}</p>
-
-              <button
-                onClick={handleRefresh}
-                className="mt-4 rounded-lg bg-red-500/10 px-4 py-2 text-sm text-red-300 hover:bg-red-500/20"
-              >
-                Try again
-              </button>
-            </div>
-          ) : filteredInterviews.length === 0 ? (
-            /* Empty state */
-            search || statusFilter !== "all" ? (
-              <div className="rounded-2xl border border-dashed border-white/10 bg-[#14141d] px-5 py-14 text-center">
-                <Search
-                  size={28}
-                  className="mx-auto mb-3 text-zinc-500"
-                />
-                <h3 className="font-semibold text-white">
-                  No matching interviews
-                </h3>
-                <p className="mt-2 text-sm text-zinc-500">
-                  Try another search term or status filter.
-                </p>
-              </div>
-            ) : (
-              <InterviewEmptyState role={role} />
-            )
-          ) : (
-            /* Interview cards */
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {filteredInterviews.map((interview) => (
-                <InterviewCard
-                  key={interview._id}
-                  interview={interview}
-                  onOpen={handleOpenInterview}
-                />
-              ))}
-            </div>
-          )}
-        </section>
+  // Loading state.
+  if (loading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <LoaderCircle
+          className="animate-spin text-indigo-500"
+          size={36}
+        />
       </div>
-    </AppLayout>
+    );
+  }
+
+  // Error or missing interview state.
+  if (!interview) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-20 text-center">
+        <h2 className="text-xl font-semibold text-white">
+          {error ? "Unable to load interview" : "Interview not found"}
+        </h2>
+
+        <p className="mt-2 text-sm text-slate-400">
+          {error ||
+            "The interview may have been removed or you may not have permission to view it."}
+        </p>
+
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
+          <button
+            onClick={fetchInterview}
+            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500"
+          >
+            <RefreshCw size={16} />
+            Try again
+          </button>
+
+          <Link
+            to="/interviews"
+            className="inline-flex rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
+          >
+            Back to interviews
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <main className="min-h-screen bg-slate-950 px-4 py-8 text-white sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-6xl space-y-6">
+        <Link
+          to="/interviews"
+          className="inline-flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
+        >
+          <ArrowLeft size={17} />
+          Back to interviews
+        </Link>
+
+        <InterviewDetailsCard interview={interview} />
+
+        <InterviewParticipants interview={interview} />
+
+        <InterviewProblemList interview={interview} />
+
+        <InterviewActions
+          interview={interview}
+          userRole={user?.role}
+          loading={actionLoading}
+          onStart={handleStart}
+          onCancel={handleCancel}
+          onComplete={handleComplete}
+          onJoin={handleJoin}
+          onEvaluate={handleEvaluate}
+          onViewScorecard={handleViewScorecard}
+          onViewReplay={handleViewReplay}
+        />
+      </div>
+    </main>
   );
 }
 
-export default InterviewDashboard;
+export default InterviewDetails;

@@ -8,187 +8,214 @@ function useInterviewSocket({ interviewId, currentUser }) {
   const [joined, setJoined] = useState(false);
   const [error, setError] = useState("");
   const [participants, setParticipants] = useState([]);
+
   const participantIdsRef = useRef(new Set());
+  const wasDisconnectedRef = useRef(false);
 
   const userId = currentUser?._id || currentUser?.id;
 
   const joinInterviewRoom = useCallback(
-  (activeSocket) => {
-    console.log("Joining interview room:", interviewId);
+    (activeSocket, isActive) => {
+      activeSocket
+        .timeout(10000)
+        .emit(
+          "interview:join",
+          { interviewId },
+          (timeoutError, response) => {
+            if (!isActive()) return;
 
-    activeSocket.emit("interview:join", { interviewId }, (response) => {
-      console.log("Interview join response:", response);
+            if (timeoutError) {
+              setJoined(false);
+              setError(
+                "Joining the interview timed out. Please try again.",
+              );
+              return;
+            }
 
-      if (!response?.success) {
-        participantIdsRef.current.clear();
-        setJoined(false);
-        setParticipants([]);
-        setError(response?.message || "Unable to join interview.");
-        return;
-      }
+            if (!response?.success) {
+              participantIdsRef.current.clear();
+              setJoined(false);
+              setParticipants([]);
+              setError(
+                response?.message || "Unable to join interview.",
+              );
+              return;
+            }
 
-      const initialParticipants = response.participants || [];
+            const initialParticipants = response.participants || [];
 
-      participantIdsRef.current = new Set(
-        initialParticipants.map((participant) =>
-          String(participant.userId),
-        ),
-      );
+            participantIdsRef.current = new Set(
+              initialParticipants.map((participant) =>
+                String(participant.userId),
+              ),
+            );
 
-      setParticipants(initialParticipants);
-      setJoined(true);
-      setError("");
-    });
-  },
-  [interviewId],
-);
+            setParticipants(initialParticipants);
+            setJoined(true);
+            setError("");
+
+            if (wasDisconnectedRef.current) {
+              toast.success(
+                "Connection restored. Interview rejoined.",
+              );
+              wasDisconnectedRef.current = false;
+            }
+          },
+        );
+    },
+    [interviewId],
+  );
 
   useEffect(() => {
     if (!interviewId) return;
 
     let active = true;
     let activeSocket = null;
-    let socketUpdateTimeout = null;
-    let errorTimeout = null;
+
+    const isActive = () => active;
 
     const token = localStorage.getItem("token");
 
     if (!token) {
-      errorTimeout = setTimeout(() => {
+      queueMicrotask(() => {
         if (active) {
-          setError("Authentication token not found. Please log in again.");
+          setError(
+            "Authentication token not found. Please log in again.",
+          );
         }
-      }, 0);
+      });
 
       return () => {
         active = false;
-        clearTimeout(errorTimeout);
       };
     }
+
+    const isAuthenticationError = (message = "") =>
+      /authentication required|invalid.*token|expired.*token|user no longer exists/i.test(
+        message,
+      );
 
     try {
       activeSocket = createInterviewSocket(token);
 
-      // Update socket state asynchronously to satisfy the React Hooks lint rule.
-      socketUpdateTimeout = setTimeout(() => {
+      queueMicrotask(() => {
         if (active) {
           setSocket(activeSocket);
         }
-      }, 0);
+      });
 
-      // Connection established.
       const handleConnect = () => {
         if (!active) return;
 
-        console.log("Interview socket connected:", activeSocket.id);
-        console.log("CONNECTED USER:", {
-          socketId: activeSocket.id,
-          interviewId,
-          userId,
-        });
+        console.log(
+          "Interview socket connected:",
+          activeSocket.id,
+        );
 
         setConnected(true);
         setJoined(false);
         setError("");
 
-        joinInterviewRoom(activeSocket);
+        joinInterviewRoom(activeSocket, isActive);
       };
 
-      // Connection disconnected.
       const handleDisconnect = (reason) => {
         if (!active) return;
 
         console.log("Socket disconnected:", reason);
+
+        wasDisconnectedRef.current = true;
 
         setConnected(false);
         setJoined(false);
         setParticipants([]);
         participantIdsRef.current.clear();
 
+        // Socket.IO does not automatically reconnect after
+        // a server-initiated disconnect.
         if (reason === "io server disconnect") {
-          console.log("Server disconnected socket. Attempting reconnection...");
           activeSocket.connect();
         }
       };
 
-      // Connection error.
       const handleConnectError = (err) => {
         if (!active) return;
 
-        console.error("Socket connection error:", {
-          message: err.message,
-          description: err.description,
-          context: err.context,
-        });
+        console.error(
+          "Socket connection error:",
+          err.message,
+        );
 
         setConnected(false);
         setJoined(false);
         setError(err.message || "Socket connection failed.");
+
+        if (isAuthenticationError(err.message)) {
+          activeSocket.io.reconnection(false);
+          activeSocket.disconnect();
+
+          localStorage.removeItem("token");
+          window.dispatchEvent(new Event("auth:logout"));
+        }
       };
 
-      // Reconnection diagnostics.
       const handleReconnectAttempt = (attempt) => {
         console.log("Socket reconnect attempt:", attempt);
       };
 
-     const handleReconnect = (attempt) => {
-  console.log("Socket reconnected after attempts:", attempt);
-  toast.success("Connection restored. Rejoining interview...");
-};
+      const handleReconnect = (attempt) => {
+        console.log(
+          "Socket transport reconnected after attempts:",
+          attempt,
+        );
+        // The connect handler performs the actual room rejoin.
+      };
 
       const handleReconnectError = (err) => {
         console.error("Socket reconnect error:", err.message);
       };
 
-      // Interview room joined.
       const handleJoined = (data) => {
         if (!active) return;
 
         console.log("Interview room joined event:", data);
-
-        setJoined(true);
-        setError("");
+        // The acknowledgement in joinInterviewRoom is authoritative.
       };
 
-      // Another participant joined.
-     const handlePresenceJoined = ({ user } = {}) => {
-  if (!active || !user?.userId) return;
+      const handlePresenceJoined = ({ user } = {}) => {
+        if (!active || !user?.userId) return;
 
-  const participantId = String(user.userId);
+        const participantId = String(user.userId);
 
-  if (participantId === String(userId)) return;
+        if (participantId === String(userId)) return;
+        if (participantIdsRef.current.has(participantId)) return;
 
-  // Ignore duplicate presence events.
-  if (participantIdsRef.current.has(participantId)) return;
+        participantIdsRef.current.add(participantId);
 
-  // Track the participant before updating React state.
-  participantIdsRef.current.add(participantId);
+        setParticipants((previous) => [...previous, user]);
 
-  // Keep the state updater pure.
-  setParticipants((previous) => [...previous, user]);
+        toast.success(
+          `${user.name || "Participant"} joined the interview`,
+        );
+      };
 
-  // Side effects belong outside the state updater.
-  toast.success(`${user.name || "Participant"} joined the interview`);
-};
-
-      // Backend sends userId and name directly in presence:user-left.
       const handlePresenceLeft = (data = {}) => {
-  const user = data.user || data;
+        const user = data.user || data;
 
-  if (!active || !user.userId) return;
+        if (!active || !user?.userId) return;
 
-  const participantId = String(user.userId);
+        const participantId = String(user.userId);
 
-  participantIdsRef.current.delete(participantId);
+        participantIdsRef.current.delete(participantId);
 
-  setParticipants((previous) =>
-    previous.filter(
-      (participant) => String(participant.userId) !== participantId,
-    ),
-  );
-};
+        setParticipants((previous) =>
+          previous.filter(
+            (participant) =>
+              String(participant.userId) !== participantId,
+          ),
+        );
+      };
 
-      // Server-side interview error.
       const handleServerError = (data) => {
         if (!active) return;
 
@@ -197,66 +224,86 @@ function useInterviewSocket({ interviewId, currentUser }) {
         setError(data?.message || "Interview socket error.");
       };
 
-      // Register Socket.IO event listeners.
       activeSocket.on("connect", handleConnect);
       activeSocket.on("disconnect", handleDisconnect);
       activeSocket.on("connect_error", handleConnectError);
       activeSocket.on("interview:joined", handleJoined);
-      activeSocket.on("presence:user-joined", handlePresenceJoined);
-      activeSocket.on("presence:user-left", handlePresenceLeft);
+      activeSocket.on(
+        "presence:user-joined",
+        handlePresenceJoined,
+      );
+      activeSocket.on(
+        "presence:user-left",
+        handlePresenceLeft,
+      );
       activeSocket.on("interview:error", handleServerError);
 
-      activeSocket.io.on("reconnect_attempt", handleReconnectAttempt);
+      activeSocket.io.on(
+        "reconnect_attempt",
+        handleReconnectAttempt,
+      );
       activeSocket.io.on("reconnect", handleReconnect);
-      activeSocket.io.on("reconnect_error", handleReconnectError);
+      activeSocket.io.on(
+        "reconnect_error",
+        handleReconnectError,
+      );
 
-      // Connect to the backend.
       console.log("Connecting to interview socket...");
       activeSocket.connect();
 
       return () => {
         active = false;
 
-        if (socketUpdateTimeout) {
-          clearTimeout(socketUpdateTimeout);
-        }
+        console.log(
+          "Interview socket cleanup:",
+          activeSocket.id,
+        );
 
-        if (errorTimeout) {
-          clearTimeout(errorTimeout);
-        }
-
-        if (!activeSocket) return;
-
-        console.log("Interview socket cleanup:", activeSocket.id);
-
-        // Remove Socket.IO event listeners.
         activeSocket.off("connect", handleConnect);
         activeSocket.off("disconnect", handleDisconnect);
-        activeSocket.off("connect_error", handleConnectError);
+        activeSocket.off(
+          "connect_error",
+          handleConnectError,
+        );
         activeSocket.off("interview:joined", handleJoined);
-        activeSocket.off("presence:user-joined", handlePresenceJoined);
-        activeSocket.off("presence:user-left", handlePresenceLeft);
-        activeSocket.off("interview:error", handleServerError);
+        activeSocket.off(
+          "presence:user-joined",
+          handlePresenceJoined,
+        );
+        activeSocket.off(
+          "presence:user-left",
+          handlePresenceLeft,
+        );
+        activeSocket.off(
+          "interview:error",
+          handleServerError,
+        );
 
-        activeSocket.io.off("reconnect_attempt", handleReconnectAttempt);
+        activeSocket.io.off(
+          "reconnect_attempt",
+          handleReconnectAttempt,
+        );
         activeSocket.io.off("reconnect", handleReconnect);
-        activeSocket.io.off("reconnect_error", handleReconnectError);
+        activeSocket.io.off(
+          "reconnect_error",
+          handleReconnectError,
+        );
 
-        // Disconnect this component's socket.
         activeSocket.disconnect();
       };
     } catch (err) {
       console.error("Socket initialization error:", err);
 
-      errorTimeout = setTimeout(() => {
+      queueMicrotask(() => {
         if (active) {
-          setError(err.message || "Unable to initialize socket.");
+          setError(
+            err.message || "Unable to initialize socket.",
+          );
         }
-      }, 0);
+      });
 
       return () => {
         active = false;
-        clearTimeout(errorTimeout);
       };
     }
   }, [interviewId, userId, joinInterviewRoom]);

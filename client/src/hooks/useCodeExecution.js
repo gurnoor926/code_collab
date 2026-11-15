@@ -79,10 +79,10 @@ function useCodeExecution() {
     }
   }, []);
 
-  const clearResult = () => {
-    setResult(null);
-    setError("");
-  };
+  const clearResult = useCallback(() => {
+  setResult(null);
+  setError("");
+}, []);
 
   return {
     runCode,

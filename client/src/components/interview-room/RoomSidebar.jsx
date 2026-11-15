@@ -1,3 +1,4 @@
+
 import ParticipantList from "./ParticipantList";
 import VideoPanel from "./VideoPanel";
 import RoomTimer from "./RoomTimer";
@@ -5,35 +6,49 @@ import RoomTimer from "./RoomTimer";
 function RoomSidebar({
   interview,
   currentUser,
-  localStream,
-  remoteStream,
-  remoteName,
-  callStatus,
-  error,
-  micEnabled,
-  remoteMicEnabled,
-  remoteCameraEnabled,
-  cameraEnabled,
+
+  localStream = null,
+  remoteStream = null,
+  remoteName = "",
+
+  callStatus = "disconnected",
+  error = "",
+
+  micEnabled = false,
+  remoteMicEnabled = false,
+
+  remoteCameraEnabled = false,
+  cameraEnabled = false,
+
   onToggleMic,
   onToggleCamera,
   onLeaveCall,
-  participants = [],
-  connected,
-  joined,
-  connectionQuality,
-  connectionMetrics,
-}) {
-  return (
-    <aside className="min-w-0 space-y-6">
-      <RoomTimer
-  durationMinutes={interview?.durationMinutes || 60}
-  status={interview?.status}
-  startedAt={interview?.startedAt}
-  endedAt={interview?.endedAt}
-  scheduledAt={interview?.scheduledAt}
-/>
 
-      <div className="rounded-2xl border border-white/10 bg-[#14141d] p-4">
+  participants = [],
+  connected = false,
+  joined = false,
+
+  connectionQuality = "unknown",
+  connectionMetrics = null,
+}) {
+  const durationMinutes = interview?.durationMinutes || 60;
+
+  return (
+    <aside
+      className="min-w-0 space-y-6"
+      aria-label="Interview room sidebar"
+    >
+      {/* Interview timer */}
+      <RoomTimer
+        durationMinutes={durationMinutes}
+        status={interview?.status}
+        startedAt={interview?.startedAt}
+        endedAt={interview?.endedAt}
+        scheduledAt={interview?.scheduledAt}
+      />
+
+      {/* Participants */}
+      <section className="rounded-2xl border border-white/10 bg-[#14141d] p-4">
         <ParticipantList
           interview={interview}
           currentUser={currentUser}
@@ -41,9 +56,10 @@ function RoomSidebar({
           connected={connected}
           joined={joined}
         />
-      </div>
+      </section>
 
-      <div className="rounded-2xl border border-white/10 bg-[#14141d] p-4">
+      {/* Video and call controls */}
+      <section className="rounded-2xl border border-white/10 bg-[#14141d] p-4">
         <VideoPanel
           interview={interview}
           currentUser={currentUser}
@@ -62,7 +78,7 @@ function RoomSidebar({
           connectionQuality={connectionQuality}
           connectionMetrics={connectionMetrics}
         />
-      </div>
+      </section>
     </aside>
   );
 }

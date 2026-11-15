@@ -1,5 +1,6 @@
 
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, useState } from "react";
+
 import {
   Camera,
   CameraOff,
@@ -52,17 +53,40 @@ const STATUS_LABELS = {
   ended: "Call ended",
 };
 
+// Safely retrieve a user ID.
+const getUserId = (user) => {
+  const id = user?._id || user?.id || user;
+
+  if (!id) return "";
+
+  if (typeof id === "object") {
+    return String(id._id || id.id || "");
+  }
+
+  return String(id);
+};
+
 // Video tile
 const VideoTile = memo(function VideoTile({
   stream,
   name,
   role,
   muted = false,
-  cameraEnabled,
-  micEnabled,
+  cameraEnabled = true,
+  micEnabled = true,
 }) {
   const videoRef = useRef(null);
 
+  const hasVideoTrack = Boolean(
+    stream?.getVideoTracks().some(
+      (track) => track.readyState === "live"
+    )
+  );
+
+  const showVideo = hasVideoTrack && cameraEnabled;
+
+  // Keep the video element mounted so a stream assigned before
+  // its video track becomes available can still play correctly.
   useEffect(() => {
     const video = videoRef.current;
 
@@ -70,37 +94,33 @@ const VideoTile = memo(function VideoTile({
 
     video.srcObject = stream || null;
 
-    if (stream) {
+    if (stream && hasVideoTrack && cameraEnabled) {
       video.play().catch((error) => {
-        console.warn("Video playback could not start:", error);
+        // Autoplay interruptions are not necessarily fatal.
+        if (error.name !== "AbortError") {
+          console.warn("Video playback could not start:", error);
+        }
       });
     }
 
     return () => {
       video.srcObject = null;
     };
-  }, [stream]);
-
-  const hasVideoTrack = stream
-    ?.getVideoTracks()
-    .some((track) => track.readyState === "live");
-
-  const showVideo = hasVideoTrack && cameraEnabled;
+  }, [stream, hasVideoTrack, cameraEnabled]);
 
   return (
     <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-white/10 bg-gradient-to-br from-[#25253a] via-[#1b1b2b] to-[#11111b]">
-      {/* Keep video mounted even when camera is disabled */}
-      {hasVideoTrack && (
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted={muted}
-          className={`h-full w-full object-cover ${
-            muted ? "scale-x-[-1]" : ""
-          } ${showVideo ? "block" : "hidden"}`}
-        />
-      )}
+      {/* Video element remains mounted */}
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted={muted}
+        aria-label={`${name} video`}
+        className={`h-full w-full object-cover ${
+          muted ? "scale-x-[-1]" : ""
+        } ${showVideo ? "block" : "hidden"}`}
+      />
 
       {/* Camera-off placeholder */}
       {!showVideo && (
@@ -109,15 +129,21 @@ const VideoTile = memo(function VideoTile({
             <UserRound size={29} />
           </div>
 
-          <p className="text-sm font-semibold text-white">{name}</p>
+          <p className="text-sm font-semibold text-white">
+            {name}
+          </p>
 
-          <p className="mt-1 text-xs text-zinc-500">{role}</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            {role}
+          </p>
         </div>
       )}
 
       {/* Participant name */}
       <div className="absolute bottom-3 left-3 flex items-center gap-2 rounded-lg border border-white/5 bg-black/60 px-3 py-1.5">
-        <span className="text-xs font-medium text-white">{name}</span>
+        <span className="text-xs font-medium text-white">
+          {name}
+        </span>
       </div>
 
       {/* Microphone status */}
@@ -128,6 +154,7 @@ const VideoTile = memo(function VideoTile({
             : "bg-red-500/20 text-red-400"
         }`}
         title={micEnabled ? "Microphone on" : "Microphone muted"}
+        aria-label={micEnabled ? "Microphone on" : "Microphone muted"}
       >
         {micEnabled ? <Mic size={13} /> : <MicOff size={13} />}
 
@@ -144,17 +171,23 @@ const ConnectionQuality = memo(function ConnectionQuality({
   quality,
   metrics = EMPTY_METRICS,
 }) {
-  const config = QUALITY_CONFIG[quality] || QUALITY_CONFIG.unknown;
+  const config =
+    QUALITY_CONFIG[quality] || QUALITY_CONFIG.unknown;
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-gray-900/80 px-3 py-2">
+    <div
+      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-gray-900/80 px-3 py-2"
+      aria-label={config.label}
+    >
       <div className="flex items-center gap-2">
         <div className="flex h-5 items-end gap-0.5">
           {[1, 2, 3].map((bar) => (
             <span
               key={bar}
               className={`w-1.5 rounded-sm ${
-                bar <= config.bars ? config.color : "bg-gray-600"
+                bar <= config.bars
+                  ? config.color
+                  : "bg-gray-600"
               }`}
               style={{ height: `${bar * 5 + 3}px` }}
             />
@@ -183,7 +216,8 @@ const ConnectionQuality = memo(function ConnectionQuality({
 
         <span>
           Loss:{" "}
-          {metrics.packetLoss !== null && metrics.packetLoss !== undefined
+          {metrics.packetLoss !== null &&
+          metrics.packetLoss !== undefined
             ? `${metrics.packetLoss}%`
             : "—"}
         </span>
@@ -199,10 +233,10 @@ const VideoPanel = memo(function VideoPanel({
   localStream,
   remoteStream,
   remoteName,
-  callStatus,
+  callStatus = "idle",
   error,
-  micEnabled,
-  cameraEnabled,
+  micEnabled = false,
+  cameraEnabled = false,
   onToggleMic,
   onToggleCamera,
   onLeaveCall,
@@ -211,16 +245,18 @@ const VideoPanel = memo(function VideoPanel({
   connectionQuality = "unknown",
   connectionMetrics = EMPTY_METRICS,
 }) {
-  const currentUserId = String(currentUser?._id || currentUser?.id || "");
+  const [leaving, setLeaving] = useState(false);
 
-  const interviewerId = String(
-    interview?.interviewer?._id || interview?.interviewer || ""
-  );
+  const currentUserId = getUserId(currentUser);
+  const interviewerId = getUserId(interview?.interviewer);
 
-  const isInterviewer = currentUserId === interviewerId;
+  const isInterviewer = currentUserId
+    ? currentUserId === interviewerId
+    : currentUser?.role === "interviewer";
 
   const localName =
-    currentUser?.name || (isInterviewer ? "Interviewer" : "Candidate");
+    currentUser?.name ||
+    (isInterviewer ? "Interviewer" : "Candidate");
 
   const localRole = isInterviewer
     ? "Interviewer (You)"
@@ -233,9 +269,35 @@ const VideoPanel = memo(function VideoPanel({
   const otherName =
     remoteName ||
     otherParticipant?.name ||
-    (isInterviewer ? "Waiting for candidate" : "Waiting for interviewer");
+    (isInterviewer
+      ? "Waiting for candidate"
+      : "Waiting for interviewer");
 
   const isConnected = callStatus === "connected";
+
+  const hasAudioTrack = Boolean(
+    localStream?.getAudioTracks().some(
+      (track) => track.readyState === "live"
+    )
+  );
+
+  const hasLocalVideoTrack = Boolean(
+    localStream?.getVideoTracks().some(
+      (track) => track.readyState === "live"
+    )
+  );
+
+  const handleLeaveCall = async () => {
+    if (leaving || callStatus === "ended") return;
+
+    try {
+      setLeaving(true);
+      await onLeaveCall?.();
+    } catch (leaveError) {
+      console.error("Unable to leave call:", leaveError);
+      setLeaving(false);
+    }
+  };
 
   return (
     <section className="w-full space-y-4">
@@ -252,6 +314,7 @@ const VideoPanel = memo(function VideoPanel({
         </div>
 
         <span
+          role="status"
           className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[10px] font-medium ${
             isConnected
               ? "bg-emerald-500/10 text-emerald-400"
@@ -270,7 +333,9 @@ const VideoPanel = memo(function VideoPanel({
             Other participant
           </p>
 
-          <span className="text-[10px] text-zinc-600">Remote</span>
+          <span className="text-[10px] text-zinc-600">
+            Remote
+          </span>
         </div>
 
         <VideoTile
@@ -280,17 +345,14 @@ const VideoPanel = memo(function VideoPanel({
           cameraEnabled={remoteCameraEnabled}
           micEnabled={remoteMicEnabled}
         />
-
-        <ConnectionQuality
-          quality={connectionQuality}
-          metrics={connectionMetrics}
-        />
       </div>
 
       {/* Local participant */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <p className="text-xs font-medium text-zinc-400">You</p>
+          <p className="text-xs font-medium text-zinc-400">
+            You
+          </p>
 
           <span className="text-[10px] text-emerald-400">
             Local preview
@@ -305,16 +367,20 @@ const VideoPanel = memo(function VideoPanel({
           cameraEnabled={cameraEnabled}
           micEnabled={micEnabled}
         />
-
-        <ConnectionQuality
-          quality={connectionQuality}
-          metrics={connectionMetrics}
-        />
       </div>
+
+      {/* Connection quality */}
+      <ConnectionQuality
+        quality={connectionQuality}
+        metrics={connectionMetrics}
+      />
 
       {/* Error message */}
       {error && (
-        <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-xs leading-relaxed text-red-400">
+        <div
+          role="alert"
+          className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-xs leading-relaxed text-red-400"
+        >
           {error}
         </div>
       )}
@@ -326,11 +392,18 @@ const VideoPanel = memo(function VideoPanel({
         </p>
 
         <div className="flex items-center justify-center gap-3">
+          {/* Microphone */}
           <button
             type="button"
             onClick={onToggleMic}
-            disabled={!localStream}
-            title={micEnabled ? "Mute microphone" : "Unmute microphone"}
+            disabled={!hasAudioTrack || !onToggleMic}
+            aria-label={
+              micEnabled ? "Mute microphone" : "Unmute microphone"
+            }
+            aria-pressed={micEnabled}
+            title={
+              micEnabled ? "Mute microphone" : "Unmute microphone"
+            }
             className={`rounded-xl border p-3 transition ${
               micEnabled
                 ? "border-white/10 bg-white/5 text-white hover:bg-white/10"
@@ -340,11 +413,18 @@ const VideoPanel = memo(function VideoPanel({
             {micEnabled ? <Mic size={18} /> : <MicOff size={18} />}
           </button>
 
+          {/* Camera */}
           <button
             type="button"
             onClick={onToggleCamera}
-            disabled={!localStream}
-            title={cameraEnabled ? "Turn camera off" : "Turn camera on"}
+            disabled={!hasLocalVideoTrack || !onToggleCamera}
+            aria-label={
+              cameraEnabled ? "Turn camera off" : "Turn camera on"
+            }
+            aria-pressed={cameraEnabled}
+            title={
+              cameraEnabled ? "Turn camera off" : "Turn camera on"
+            }
             className={`rounded-xl border p-3 transition ${
               cameraEnabled
                 ? "border-white/10 bg-white/5 text-white hover:bg-white/10"
@@ -358,10 +438,12 @@ const VideoPanel = memo(function VideoPanel({
             )}
           </button>
 
+          {/* Leave call */}
           <button
             type="button"
-            onClick={onLeaveCall}
-            disabled={!localStream && callStatus === "ended"}
+            onClick={handleLeaveCall}
+            disabled={leaving || callStatus === "ended"}
+            aria-label="Leave video call"
             title="Leave video call"
             className="rounded-xl border border-red-500/20 bg-red-600 p-3 text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40"
           >

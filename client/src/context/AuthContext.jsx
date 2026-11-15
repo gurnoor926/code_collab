@@ -1,23 +1,14 @@
+
 import { useEffect, useState } from "react";
 import { AuthContext } from "./authContextDef";
 import authService from "../services/authService";
+import { resetApiLogoutState } from "../services/api";
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const handleUnauthorized = () => {
-      setUser(null);
-    };
-
-    window.addEventListener("auth:logout", handleUnauthorized);
-
-    return () => {
-      window.removeEventListener("auth:logout", handleUnauthorized);
-    };
-  }, []);
-
+  // Initialize authentication.
   useEffect(() => {
     let isMounted = true;
 
@@ -59,26 +50,57 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
+  // Listen for centralized unauthorized events.
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      setUser(null);
+    };
+
+    window.addEventListener(
+      "auth:logout",
+      handleUnauthorized,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "auth:logout",
+        handleUnauthorized,
+      );
+    };
+  }, []);
+
+  // Login.
   const login = async (credentials) => {
     const response = await authService.login(credentials);
 
     localStorage.setItem("token", response.token);
+
+    resetApiLogoutState();
+
     setUser(response.user);
 
     return response;
   };
 
+  // Register.
   const register = async (userData) => {
     const response = await authService.register(userData);
 
     localStorage.setItem("token", response.token);
+
+    resetApiLogoutState();
+
     setUser(response.user);
 
     return response;
   };
 
+  // Logout.
   const logout = () => {
     localStorage.removeItem("token");
+
+    resetApiLogoutState();
+
     setUser(null);
   };
 
@@ -91,7 +113,11 @@ export function AuthProvider({ children }) {
     logout,
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export default AuthProvider;

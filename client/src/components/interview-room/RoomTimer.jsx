@@ -4,7 +4,7 @@ import { Clock3 } from "lucide-react";
 import toast from "react-hot-toast";
 
 function formatTime(totalSeconds) {
-  const safeSeconds = Math.max(0, totalSeconds);
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
 
   const hours = Math.floor(safeSeconds / 3600);
   const minutes = Math.floor((safeSeconds % 3600) / 60);
@@ -17,6 +17,14 @@ function formatTime(totalSeconds) {
   ].join(":");
 }
 
+function parseTimestamp(value) {
+  if (!value) return null;
+
+  const timestamp = new Date(value).getTime();
+
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
 function RoomTimer({
   durationMinutes = 60,
   status,
@@ -25,51 +33,73 @@ function RoomTimer({
   scheduledAt,
 }) {
   const [currentTime, setCurrentTime] = useState(() => Date.now());
-  const notifiedRef = useRef(false);
 
-  const startTimestamp = startedAt
-    ? new Date(startedAt).getTime()
-    : null;
+  // Track expiry notifications per interview start.
+  const notifiedStartRef = useRef(null);
 
-  const endTimestamp = endedAt
-    ? new Date(endedAt).getTime()
-    : null;
+  const safeDurationMinutes =
+    Number.isFinite(Number(durationMinutes)) &&
+    Number(durationMinutes) > 0
+      ? Number(durationMinutes)
+      : 60;
 
-  const scheduledTimestamp = scheduledAt
-    ? new Date(scheduledAt).getTime()
-    : null;
+  const startTimestamp = parseTimestamp(startedAt);
+  const endTimestamp = parseTimestamp(endedAt);
+  const scheduledTimestamp = parseTimestamp(scheduledAt);
 
-  const durationSeconds = durationMinutes * 60;
+  const durationSeconds = safeDurationMinutes * 60;
 
+  // Update displayed time every second while scheduled or active.
+  useEffect(() => {
+    if (!["active", "scheduled"].includes(status)) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [status, startedAt, scheduledAt]);
+
+  // Calculate the displayed time from absolute timestamps.
   const remainingSeconds = useMemo(() => {
-    if (status === "active" && Number.isFinite(startTimestamp)) {
-      const endTime = startTimestamp + durationSeconds * 1000;
+    if (status === "active") {
+      if (startTimestamp === null) return null;
 
-      return Math.max(0, Math.ceil((endTime - currentTime) / 1000));
-    }
+      const endTime =
+        startTimestamp + durationSeconds * 1000;
 
-    if (
-      status === "scheduled" &&
-      Number.isFinite(scheduledTimestamp)
-    ) {
       return Math.max(
         0,
-        Math.ceil((scheduledTimestamp - currentTime) / 1000),
+        Math.ceil((endTime - currentTime) / 1000)
       );
     }
 
-    if (
-      status === "completed" &&
-      Number.isFinite(startTimestamp) &&
-      Number.isFinite(endTimestamp)
-    ) {
+    if (status === "scheduled") {
+      if (scheduledTimestamp === null) return null;
+
       return Math.max(
         0,
-        Math.ceil((endTimestamp - startTimestamp) / 1000),
+        Math.ceil((scheduledTimestamp - currentTime) / 1000)
       );
     }
 
-    return durationSeconds;
+    if (status === "completed") {
+      if (
+        startTimestamp === null ||
+        endTimestamp === null
+      ) {
+        return null;
+      }
+
+      return Math.max(
+        0,
+        Math.floor((endTimestamp - startTimestamp) / 1000)
+      );
+    }
+
+    return null;
   }, [
     status,
     startTimestamp,
@@ -79,69 +109,80 @@ function RoomTimer({
     currentTime,
   ]);
 
-  // Update the displayed time every second.
+  // Notify only once for each interview start.
   useEffect(() => {
-    if (!["active", "scheduled"].includes(status)) return;
-
-    const interval = setInterval(() => {
-      setCurrentTime(Date.now());
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [status, startedAt, scheduledAt]);
-
-  // Notify when the allocated interview duration expires.
-  useEffect(() => {
-    if (status !== "active" || remainingSeconds > 0) {
+    if (
+      status !== "active" ||
+      startTimestamp === null ||
+      remainingSeconds === null ||
+      remainingSeconds > 0
+    ) {
       return;
     }
 
-    if (!notifiedRef.current) {
-      notifiedRef.current = true;
-      toast.error("Interview time has expired.");
-    }
-  }, [status, remainingSeconds]);
+    const startKey = String(startTimestamp);
 
-  // Reset notification state for a different interview start.
-  useEffect(() => {
-    notifiedRef.current = false;
-  }, [startedAt]);
+    if (notifiedStartRef.current === startKey) {
+      return;
+    }
+
+    notifiedStartRef.current = startKey;
+
+    toast.error("Interview time has expired.");
+  }, [status, startTimestamp, remainingSeconds]);
 
   const isActive = status === "active";
   const isScheduled = status === "scheduled";
   const isCompleted = status === "completed";
   const isCancelled = status === "cancelled";
 
+  const isLowTime =
+    isActive &&
+    remainingSeconds !== null &&
+    remainingSeconds <= 300;
+
+  // Timer labels.
   const timerLabel = isActive
-    ? remainingSeconds === 0
-      ? "Time expired"
-      : "Time remaining"
+    ? remainingSeconds === null
+      ? "Synchronizing timer"
+      : remainingSeconds === 0
+        ? "Time expired"
+        : "Time remaining"
     : isScheduled
-      ? scheduledTimestamp
-        ? remainingSeconds === 0
+      ? scheduledTimestamp === null
+        ? "Scheduled interview"
+        : remainingSeconds === 0
           ? "Scheduled start reached"
           : "Starts in"
-        : "Scheduled interview"
       : isCompleted
         ? "Interview duration"
         : isCancelled
           ? "Interview cancelled"
           : "Waiting to start";
 
-  const isLowTime = isActive && remainingSeconds <= 300;
-
-  const displayTime =
-    isCancelled
+  // Timer display.
+  const displayTime = isCancelled
+    ? "--:--:--"
+    : remainingSeconds === null
       ? "--:--:--"
-      : isActive && !Number.isFinite(startTimestamp)
-        ? "Syncing..."
-        : isScheduled && !Number.isFinite(scheduledTimestamp)
-          ? "--:--:--"
-          : formatTime(remainingSeconds);
+      : formatTime(remainingSeconds);
+
+  // Progress percentage for active interviews.
+  const progressPercentage =
+    isActive && remainingSeconds !== null
+      ? Math.min(
+          100,
+          Math.max(
+            0,
+            (remainingSeconds / durationSeconds) * 100
+          )
+        )
+      : 0;
 
   return (
     <div className="rounded-xl border border-white/10 bg-[#14141d] px-4 py-4">
       <div className="flex items-center gap-3">
+        {/* Timer icon */}
         <div
           className={`rounded-lg p-2 ${
             isLowTime
@@ -152,12 +193,15 @@ function RoomTimer({
           <Clock3 size={19} />
         </div>
 
+        {/* Timer display */}
         <div className="min-w-0 flex-1">
           <p className="text-[10px] uppercase tracking-wider text-zinc-500">
             {timerLabel}
           </p>
 
           <p
+            role="timer"
+            aria-live="off"
             className={`mt-1 font-mono text-xl font-bold tabular-nums ${
               isLowTime ? "text-red-400" : "text-white"
             }`}
@@ -166,36 +210,47 @@ function RoomTimer({
           </p>
         </div>
 
+        {/* Allocated duration */}
         <div className="text-right">
-          <p className="text-[10px] text-zinc-500">Allocated</p>
+          <p className="text-[10px] text-zinc-500">
+            Allocated
+          </p>
+
           <p className="mt-1 text-sm font-semibold text-zinc-300">
-            {durationMinutes} min
+            {safeDurationMinutes} min
           </p>
         </div>
       </div>
 
+      {/* Active interview progress */}
       {isActive && (
-        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/5">
+        <div
+          className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/5"
+          role="progressbar"
+          aria-label="Interview time remaining"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={progressPercentage}
+        >
           <div
             className={`h-full rounded-full transition-all duration-1000 ${
               isLowTime ? "bg-red-500" : "bg-indigo-500"
             }`}
             style={{
-              width: `${Math.min(
-                100,
-                Math.max(0, (remainingSeconds / durationSeconds) * 100),
-              )}%`,
+              width: `${progressPercentage}%`,
             }}
           />
         </div>
       )}
 
+      {/* Completed state */}
       {isCompleted && (
         <p className="mt-2 text-xs text-emerald-400">
           Interview completed
         </p>
       )}
 
+      {/* Cancelled state */}
       {isCancelled && (
         <p className="mt-2 text-xs text-red-400">
           This interview has been cancelled.

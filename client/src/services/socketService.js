@@ -1,4 +1,3 @@
-
 import { io } from "socket.io-client";
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL;
@@ -13,13 +12,12 @@ export const createInterviewSocket = (token) => {
   }
 
   return io(SOCKET_URL, {
-    auth: {
-      token,
-    },
+    auth: { token },
     autoConnect: false,
     reconnection: true,
     reconnectionAttempts: 5,
     reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
     timeout: 10000,
   });
 };
