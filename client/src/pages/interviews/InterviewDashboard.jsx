@@ -83,11 +83,20 @@ function InterviewDashboard() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-950 px-4 py-8 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl space-y-6">
-        {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-4">
+    <AppLayout>
+      <div className="space-y-6">
+        {/* Back + header row */}
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
+            <button
+              type="button"
+              onClick={() => navigate("/dashboard")}
+              className="mb-3 inline-flex items-center gap-1.5 text-sm text-zinc-400 transition hover:text-white"
+            >
+              <ArrowLeft size={16} />
+              Back to Dashboard
+            </button>
+
             <h1 className="text-2xl font-bold text-white">Interviews</h1>
             <p className="mt-1 text-sm text-zinc-400">
               {isInterviewer
@@ -166,7 +175,7 @@ function InterviewDashboard() {
           <InterviewEmptyState role={user?.role} />
         )}
       </div>
-    </main>
+    </AppLayout>
   );
 }
 
