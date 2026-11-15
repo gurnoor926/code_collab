@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+
+import { memo, useEffect, useRef } from "react";
 import {
   Camera,
   CameraOff,
@@ -9,7 +10,50 @@ import {
   Wifi,
 } from "lucide-react";
 
-function VideoTile({
+// Stable default values
+const EMPTY_METRICS = {};
+
+// Connection quality configuration
+const QUALITY_CONFIG = {
+  good: {
+    label: "Good connection",
+    color: "bg-green-500",
+    text: "text-green-400",
+    bars: 3,
+  },
+  fair: {
+    label: "Fair connection",
+    color: "bg-yellow-500",
+    text: "text-yellow-400",
+    bars: 2,
+  },
+  poor: {
+    label: "Poor connection",
+    color: "bg-red-500",
+    text: "text-red-400",
+    bars: 1,
+  },
+  unknown: {
+    label: "Checking connection",
+    color: "bg-gray-500",
+    text: "text-gray-400",
+    bars: 0,
+  },
+};
+
+// Call status labels
+const STATUS_LABELS = {
+  idle: "Not connected",
+  waiting: "Waiting for participant",
+  connecting: "Connecting...",
+  connected: "Connected",
+  reconnecting: "Reconnecting...",
+  failed: "Connection failed",
+  ended: "Call ended",
+};
+
+// Video tile
+const VideoTile = memo(function VideoTile({
   stream,
   name,
   role,
@@ -71,9 +115,12 @@ function VideoTile({
         </div>
       )}
 
+      {/* Participant name */}
       <div className="absolute bottom-3 left-3 flex items-center gap-2 rounded-lg border border-white/5 bg-black/60 px-3 py-1.5">
         <span className="text-xs font-medium text-white">{name}</span>
       </div>
+
+      {/* Microphone status */}
       <div
         className={`absolute bottom-3 right-3 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 ${
           micEnabled
@@ -83,43 +130,21 @@ function VideoTile({
         title={micEnabled ? "Microphone on" : "Microphone muted"}
       >
         {micEnabled ? <Mic size={13} /> : <MicOff size={13} />}
+
         <span className="text-[10px] font-medium">
           {micEnabled ? "Mic On" : "Muted"}
         </span>
       </div>
     </div>
   );
-}
+});
 
-function ConnectionQuality({ quality, metrics }) {
-  const qualityConfig = {
-    good: {
-      label: "Good connection",
-      color: "bg-green-500",
-      text: "text-green-400",
-      bars: 3,
-    },
-    fair: {
-      label: "Fair connection",
-      color: "bg-yellow-500",
-      text: "text-yellow-400",
-      bars: 2,
-    },
-    poor: {
-      label: "Poor connection",
-      color: "bg-red-500",
-      text: "text-red-400",
-      bars: 1,
-    },
-    unknown: {
-      label: "Checking connection",
-      color: "bg-gray-500",
-      text: "text-gray-400",
-      bars: 0,
-    },
-  };
-
-  const config = qualityConfig[quality] || qualityConfig.unknown;
+// Connection quality indicator
+const ConnectionQuality = memo(function ConnectionQuality({
+  quality,
+  metrics = EMPTY_METRICS,
+}) {
+  const config = QUALITY_CONFIG[quality] || QUALITY_CONFIG.unknown;
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-gray-900/80 px-3 py-2">
@@ -165,9 +190,10 @@ function ConnectionQuality({ quality, metrics }) {
       </div>
     </div>
   );
-}
+});
 
-function VideoPanel({
+// Main video panel
+const VideoPanel = memo(function VideoPanel({
   interview,
   currentUser,
   localStream,
@@ -183,11 +209,12 @@ function VideoPanel({
   remoteCameraEnabled = true,
   remoteMicEnabled = true,
   connectionQuality = "unknown",
-  connectionMetrics = {},
+  connectionMetrics = EMPTY_METRICS,
 }) {
   const currentUserId = String(currentUser?._id || currentUser?.id || "");
+
   const interviewerId = String(
-    interview?.interviewer?._id || interview?.interviewer || "",
+    interview?.interviewer?._id || interview?.interviewer || ""
   );
 
   const isInterviewer = currentUserId === interviewerId;
@@ -195,7 +222,9 @@ function VideoPanel({
   const localName =
     currentUser?.name || (isInterviewer ? "Interviewer" : "Candidate");
 
-  const localRole = isInterviewer ? "Interviewer (You)" : "Candidate (You)";
+  const localRole = isInterviewer
+    ? "Interviewer (You)"
+    : "Candidate (You)";
 
   const otherParticipant = isInterviewer
     ? interview?.candidate
@@ -206,25 +235,20 @@ function VideoPanel({
     otherParticipant?.name ||
     (isInterviewer ? "Waiting for candidate" : "Waiting for interviewer");
 
-  const statusLabels = {
-    idle: "Not connected",
-    waiting: "Waiting for participant",
-    connecting: "Connecting...",
-    connected: "Connected",
-    reconnecting: "Reconnecting...",
-    failed: "Connection failed",
-    ended: "Call ended",
-  };
-
   const isConnected = callStatus === "connected";
 
   return (
     <section className="w-full space-y-4">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-white">Video Conference</h3>
+          <h3 className="text-sm font-semibold text-white">
+            Video Conference
+          </h3>
 
-          <p className="mt-1 text-xs text-zinc-500">Interview participants</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            Interview participants
+          </p>
         </div>
 
         <span
@@ -235,14 +259,16 @@ function VideoPanel({
           }`}
         >
           <Wifi size={12} />
-          {statusLabels[callStatus] || "Connecting..."}
+          {STATUS_LABELS[callStatus] || "Connecting..."}
         </span>
       </div>
 
       {/* Remote participant */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <p className="text-xs font-medium text-zinc-400">Other participant</p>
+          <p className="text-xs font-medium text-zinc-400">
+            Other participant
+          </p>
 
           <span className="text-[10px] text-zinc-600">Remote</span>
         </div>
@@ -254,6 +280,7 @@ function VideoPanel({
           cameraEnabled={remoteCameraEnabled}
           micEnabled={remoteMicEnabled}
         />
+
         <ConnectionQuality
           quality={connectionQuality}
           metrics={connectionMetrics}
@@ -265,7 +292,9 @@ function VideoPanel({
         <div className="flex items-center justify-between">
           <p className="text-xs font-medium text-zinc-400">You</p>
 
-          <span className="text-[10px] text-emerald-400">Local preview</span>
+          <span className="text-[10px] text-emerald-400">
+            Local preview
+          </span>
         </div>
 
         <VideoTile
@@ -276,6 +305,7 @@ function VideoPanel({
           cameraEnabled={cameraEnabled}
           micEnabled={micEnabled}
         />
+
         <ConnectionQuality
           quality={connectionQuality}
           metrics={connectionMetrics}
@@ -291,7 +321,9 @@ function VideoPanel({
 
       {/* Call controls */}
       <div className="rounded-xl border border-white/10 bg-[#181823] p-4">
-        <p className="mb-3 text-xs font-medium text-zinc-400">Call controls</p>
+        <p className="mb-3 text-xs font-medium text-zinc-400">
+          Call controls
+        </p>
 
         <div className="flex items-center justify-center gap-3">
           <button
@@ -319,7 +351,11 @@ function VideoPanel({
                 : "border-red-500/30 bg-red-500/10 text-red-400"
             } disabled:cursor-not-allowed disabled:opacity-40`}
           >
-            {cameraEnabled ? <Camera size={18} /> : <CameraOff size={18} />}
+            {cameraEnabled ? (
+              <Camera size={18} />
+            ) : (
+              <CameraOff size={18} />
+            )}
           </button>
 
           <button
@@ -341,6 +377,6 @@ function VideoPanel({
       </div>
     </section>
   );
-}
+});
 
 export default VideoPanel;

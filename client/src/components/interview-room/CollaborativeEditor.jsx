@@ -1,12 +1,14 @@
-
-import { useCallback, useEffect, useRef, useState } from "react";
-import Editor from "@monaco-editor/react";
 import {
-  Code2,
-  Play,
-  Settings2,
-  LoaderCircle,
-} from "lucide-react";
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  lazy,
+  Suspense,
+} from "react";
+const Editor = lazy(() => import("@monaco-editor/react"));
+import { Code2, Play, Settings2, LoaderCircle } from "lucide-react";
 import toast from "react-hot-toast";
 import problemService from "../../services/problemService";
 import replayService from "../../services/replayService";
@@ -51,6 +53,33 @@ int main() {
 
     return 0;
 }`,
+};
+
+const EDITOR_OPTIONS = {
+  readOnly: false,
+  domReadOnly: false,
+  minimap: { enabled: false },
+  fontSize: 14,
+  fontFamily: "Consolas, 'Courier New', monospace",
+  wordWrap: "on",
+  automaticLayout: true,
+  scrollBeyondLastLine: false,
+  padding: {
+    top: 18,
+    bottom: 18,
+  },
+  smoothScrolling: true,
+  cursorBlinking: "smooth",
+  renderLineHighlight: "all",
+  lineNumbers: "on",
+  glyphMargin: true,
+  tabSize: 2,
+  insertSpaces: true,
+  folding: true,
+  scrollbar: {
+    verticalScrollbarSize: 8,
+    horizontalScrollbarSize: 8,
+  },
 };
 
 // Extract starter code from common API response structures.
@@ -115,9 +144,10 @@ function CollaborativeEditor({
 
   const [language, setLanguage] = useState("javascript");
   const [code, setCode] = useState(defaultStarterCode.javascript);
+  const languageRef = useRef(language);
 
   const [selectedProblemId, setSelectedProblemId] = useState(
-    problems.length > 0 ? getProblemId(problems[0]) : ""
+    problems.length > 0 ? getProblemId(problems[0]) : "",
   );
 
   const [problemDetails, setProblemDetails] = useState(null);
@@ -139,7 +169,7 @@ function CollaborativeEditor({
 
       setSelectedProblemId((current) => {
         const problemExists = problems.some(
-          (problem) => getProblemId(problem) === current
+          (problem) => getProblemId(problem) === current,
         );
 
         return problemExists ? current : firstProblemId;
@@ -161,8 +191,7 @@ function CollaborativeEditor({
       try {
         setProblemLoading(true);
 
-        const response =
-          await problemService.getProblemById(selectedProblemId);
+        const response = await problemService.getProblemById(selectedProblemId);
 
         if (cancelled) return;
 
@@ -175,7 +204,7 @@ function CollaborativeEditor({
 
         setProblemDetails(details);
 
-        const starter = getProblemStarterCode(details, language);
+        const starter = getProblemStarterCode(details, languageRef.current);
 
         setCode(starter);
 
@@ -186,11 +215,10 @@ function CollaborativeEditor({
           console.error("Failed to fetch problem details:", error);
 
           setProblemDetails(null);
-          setCode(defaultStarterCode[language]);
+          setCode(defaultStarterCode[languageRef.current]);
 
           toast.error(
-            error.response?.data?.message ||
-              "Unable to load problem details."
+            error.response?.data?.message || "Unable to load problem details.",
           );
         }
       } finally {
@@ -208,24 +236,21 @@ function CollaborativeEditor({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [selectedProblemId, language]);
+  }, [selectedProblemId]);
 
   // Keep refs synchronized with the latest props.
   useEffect(() => {
     socketRef.current = socket;
     joinedRef.current = joined;
     interviewIdRef.current = interviewId;
-  }, [socket, joined, interviewId]);
-
+    languageRef.current = language;
+  }, [socket, joined, interviewId, language]);
   // Receive collaborative updates.
   useEffect(() => {
     if (!socket || !joined) return;
 
     const handleRemoteCode = (data = {}) => {
-      if (
-        data.updatedBy &&
-        String(data.updatedBy) === String(userId)
-      ) {
+      if (data.updatedBy && String(data.updatedBy) === String(userId)) {
         return;
       }
 
@@ -239,14 +264,13 @@ function CollaborativeEditor({
         editorRef.current.setValue(data.code);
       }
 
-      suppressRemoteChange.current = false;
+      queueMicrotask(() => {
+        suppressRemoteChange.current = false;
+      });
     };
 
     const handleRemoteLanguage = (data = {}) => {
-      if (
-        data.updatedBy &&
-        String(data.updatedBy) === String(userId)
-      ) {
+      if (data.updatedBy && String(data.updatedBy) === String(userId)) {
         return;
       }
 
@@ -278,10 +302,7 @@ function CollaborativeEditor({
         return;
       }
 
-      const safeColumn = Math.min(
-        column,
-        model.getLineMaxColumn(lineNumber)
-      );
+      const safeColumn = Math.min(column, model.getLineMaxColumn(lineNumber));
 
       remoteDecorations.current = editor.deltaDecorations(
         remoteDecorations.current,
@@ -304,7 +325,7 @@ function CollaborativeEditor({
               },
             },
           },
-        ]
+        ],
       );
     };
 
@@ -318,11 +339,10 @@ function CollaborativeEditor({
       socket.off("editor:cursor", handleRemoteCursor);
 
       if (editorRef.current) {
-        remoteDecorations.current =
-          editorRef.current.deltaDecorations(
-            remoteDecorations.current,
-            []
-          );
+        remoteDecorations.current = editorRef.current.deltaDecorations(
+          remoteDecorations.current,
+          [],
+        );
       }
     };
   }, [socket, joined, userId]);
@@ -334,136 +354,143 @@ function CollaborativeEditor({
 
     cursorListenerRef.current?.dispose();
 
-    cursorListenerRef.current =
-      editor.onDidChangeCursorPosition((event) => {
-        const activeSocket = socketRef.current;
-        const activeInterviewId = interviewIdRef.current;
+    cursorListenerRef.current = editor.onDidChangeCursorPosition((event) => {
+      const activeSocket = socketRef.current;
+      const activeInterviewId = interviewIdRef.current;
 
-        if (
-          !activeSocket ||
-          !joinedRef.current ||
-          !activeSocket.connected ||
-          !activeInterviewId
-        ) {
-          return;
-        }
+      if (
+        !activeSocket ||
+        !joinedRef.current ||
+        !activeSocket.connected ||
+        !activeInterviewId
+      ) {
+        return;
+      }
 
-        activeSocket.emit("editor:cursor", {
-          interviewId: activeInterviewId,
-          position: {
-            lineNumber: event.position.lineNumber,
-            column: event.position.column,
-          },
-        });
+      activeSocket.emit("editor:cursor", {
+        interviewId: activeInterviewId,
+        position: {
+          lineNumber: event.position.lineNumber,
+          column: event.position.column,
+        },
       });
+    });
   }, []);
 
   // Synchronize local code changes.
-  const handleCodeChange = (value) => {
-    const nextCode = value ?? "";
+  const handleCodeChange = useCallback(
+    (value) => {
+      const nextCode = value ?? "";
 
-    setCode(nextCode);
+      setCode(nextCode);
 
-    if (suppressRemoteChange.current) return;
+      if (suppressRemoteChange.current) return;
 
-    const activeSocket = socketRef.current;
-    const activeInterviewId = interviewIdRef.current;
+      const activeSocket = socketRef.current;
+      const activeInterviewId = interviewIdRef.current;
 
-    if (
-      !activeSocket ||
-      !joinedRef.current ||
-      !activeSocket.connected ||
-      !activeInterviewId
-    ) {
-      return;
-    }
+      if (
+        !activeSocket ||
+        !joinedRef.current ||
+        !activeSocket.connected ||
+        !activeInterviewId
+      ) {
+        return;
+      }
 
-    activeSocket.emit(
-      "editor:change",
-      {
-        interviewId: activeInterviewId,
-        code: nextCode,
-        language,
-      },
-      (response) => {
-        if (response && !response.success) {
-          console.error(
-            "Code synchronization failed:",
-            response.message
-          );
+      activeSocket.emit(
+        "editor:change",
+        {
+          interviewId: activeInterviewId,
+          code: nextCode,
+          language,
+        },
+        (response) => {
+          if (response && !response.success) {
+            console.error("Code synchronization failed:", response.message);
+          }
+        },
+      );
+
+      // Debounced replay recording
+      if (replayDebounceRef.current) {
+        clearTimeout(replayDebounceRef.current);
+      }
+      replayDebounceRef.current = setTimeout(() => {
+        changeCountRef.current += 1;
+
+        const replayPayload = {
+          code: nextCode,
+          language,
+        };
+
+        if (changeCountRef.current % 25 === 0) {
+          replayService
+            .createSnapshot(activeInterviewId, replayPayload)
+            .catch(() => {});
+        } else {
+          replayService
+            .recordCodeChange(activeInterviewId, replayPayload)
+            .catch(() => {});
         }
-      }
-    );
-
-    // Debounced replay recording
-    if (replayDebounceRef.current) {
-      clearTimeout(replayDebounceRef.current);
-    }
-    replayDebounceRef.current = setTimeout(() => {
-      changeCountRef.current += 1;
-      if (changeCountRef.current % 25 === 0) {
-        replayService
-          .createSnapshot(activeInterviewId, {
-            code: nextCode,
-            language,
-          })
-          .catch(() => {});
-      } else {
-        replayService
-          .recordCodeChange(activeInterviewId, {
-            code: nextCode,
-            language,
-          })
-          .catch(() => {});
-      }
-    }, 1500);
-  };
+      }, 1500);
+    },
+    [language],
+  );
 
   // Synchronize language changes and load its starter code.
-  const handleLanguageChange = (event) => {
-    const nextLanguage = event.target.value;
+  const handleLanguageChange = useCallback(
+    (event) => {
+      const nextLanguage = event.target.value;
 
-    const nextCode = getProblemStarterCode(
-      problemDetails,
-      nextLanguage
-    );
+      const nextCode = getProblemStarterCode(problemDetails, nextLanguage);
 
-    setLanguage(nextLanguage);
-    setCode(nextCode);
+      // Prevent an old pending replay event from being recorded
+      // after the language has changed.
 
-    const activeSocket = socketRef.current;
-    const activeInterviewId = interviewIdRef.current;
+      if (replayDebounceRef.current) {
+        clearTimeout(replayDebounceRef.current);
+        replayDebounceRef.current = null;
+      }
 
-    if (
-      !activeSocket ||
-      !joinedRef.current ||
-      !activeSocket.connected ||
-      !activeInterviewId
-    ) {
-      return;
-    }
+      setLanguage(nextLanguage);
+      setCode(nextCode);
 
-    activeSocket.emit("editor:language", {
-      interviewId: activeInterviewId,
-      language: nextLanguage,
-    });
+      const activeSocket = socketRef.current;
+      const activeInterviewId = interviewIdRef.current;
 
-    activeSocket.emit("editor:change", {
-      interviewId: activeInterviewId,
-      code: nextCode,
-      language: nextLanguage,
-    });
+      if (
+        !activeSocket ||
+        !joinedRef.current ||
+        !activeSocket.connected ||
+        !activeInterviewId
+      ) {
+        return;
+      }
 
-    replayService
-      .recordLanguageChange(activeInterviewId, { language: nextLanguage })
-      .catch(() => {});
-    replayService
-      .recordCodeChange(activeInterviewId, {
+      activeSocket.emit("editor:language", {
+        interviewId: activeInterviewId,
+        language: nextLanguage,
+      });
+
+      activeSocket.emit("editor:change", {
+        interviewId: activeInterviewId,
         code: nextCode,
         language: nextLanguage,
-      })
-      .catch(() => {});
-  };
+      });
+
+      replayService
+        .recordLanguageChange(activeInterviewId, { language: nextLanguage })
+        .catch(() => {});
+      replayService
+        .recordCodeChange(activeInterviewId, {
+          code: nextCode,
+          language: nextLanguage,
+        })
+        .catch(() => {});
+    },
+    [problemDetails],
+  );
 
   // Run code using the existing execution handler.
   const handleRun = () => {
@@ -511,9 +538,7 @@ function CollaborativeEditor({
         <div className="flex items-center gap-2">
           <Code2 size={18} className="text-indigo-400" />
 
-          <span className="text-sm font-semibold text-white">
-            Code Editor
-          </span>
+          <span className="text-sm font-semibold text-white">Code Editor</span>
 
           <span
             className={`rounded-md px-2 py-1 text-[10px] ${
@@ -553,9 +578,7 @@ function CollaborativeEditor({
           {/* Problem selector */}
           <select
             value={selectedProblemId}
-            onChange={(event) =>
-              setSelectedProblemId(event.target.value)
-            }
+            onChange={(event) => setSelectedProblemId(event.target.value)}
             disabled={problems.length === 0 || problemLoading}
             className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white disabled:opacity-50"
           >
@@ -567,9 +590,7 @@ function CollaborativeEditor({
               const problemId = getProblemId(problem);
 
               const problemTitle =
-                typeof problem === "string"
-                  ? "Problem"
-                  : problem.title;
+                typeof problem === "string" ? "Problem" : problem.title;
 
               return (
                 <option key={problemId} value={problemId}>
@@ -580,10 +601,7 @@ function CollaborativeEditor({
           </select>
 
           {problemLoading && (
-            <LoaderCircle
-              size={16}
-              className="animate-spin text-indigo-400"
-            />
+            <LoaderCircle size={16} className="animate-spin text-indigo-400" />
           )}
         </div>
       </div>
@@ -602,48 +620,33 @@ function CollaborativeEditor({
           )}
         </div>
       )}
-
       {/* Monaco editor */}
       <div className="w-full bg-[#1e1e1e]">
-        <Editor
-          height="480px"
-          width="100%"
-          language={language}
-          value={code}
-          onChange={handleCodeChange}
-          onMount={handleEditorMount}
-          theme="vs-dark"
-          options={{
-            readOnly: false,
-            domReadOnly: false,
-            minimap: {
-              enabled: false,
-            },
-            fontSize: 14,
-            fontFamily: "Consolas, 'Courier New', monospace",
-            wordWrap: "on",
-            automaticLayout: true,
-            scrollBeyondLastLine: false,
-            padding: {
-              top: 18,
-              bottom: 18,
-            },
-            smoothScrolling: true,
-            cursorBlinking: "smooth",
-            renderLineHighlight: "all",
-            lineNumbers: "on",
-            glyphMargin: true,
-            tabSize: 2,
-            insertSpaces: true,
-            folding: true,
-            scrollbar: {
-              verticalScrollbarSize: 8,
-              horizontalScrollbarSize: 8,
-            },
-          }}
-        />
+        <Suspense
+          fallback={
+            <div className="flex h-[480px] items-center justify-center bg-[#1e1e1e]">
+              <div className="flex flex-col items-center gap-3">
+                <LoaderCircle
+                  size={28}
+                  className="animate-spin text-indigo-400"
+                />
+                <p className="text-sm text-zinc-400">Loading code editor...</p>
+              </div>
+            </div>
+          }
+        >
+          <Editor
+            height="480px"
+            width="100%"
+            language={language}
+            value={code}
+            onChange={handleCodeChange}
+            onMount={handleEditorMount}
+            theme="vs-dark"
+            options={EDITOR_OPTIONS}
+          />
+        </Suspense>
       </div>
-
       {/* Editor footer */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-4 py-3">
         <p className="text-xs text-zinc-500">
@@ -675,4 +678,4 @@ function CollaborativeEditor({
   );
 }
 
-export default CollaborativeEditor;
+export default memo(CollaborativeEditor);

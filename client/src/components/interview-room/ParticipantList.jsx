@@ -1,7 +1,7 @@
-
+import { memo } from "react";
 import { Circle, UserRound } from "lucide-react";
 
-function ParticipantCard({
+const ParticipantCard = memo(function ParticioantCard({
   user,
   isCurrentUser = false,
   isOnline = false,
@@ -63,9 +63,9 @@ function ParticipantCard({
       </div>
     </div>
   );
-}
+});
 
-function ParticipantList({
+const ParticipantList = memo(function ParticipantList({
   interview,
   currentUser,
   participants = [],
@@ -130,6 +130,6 @@ function ParticipantList({
       />
     </section>
   );
-}
+});
 
 export default ParticipantList;

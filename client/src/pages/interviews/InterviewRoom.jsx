@@ -16,6 +16,8 @@ import ExecutionPanel from "../../components/interview-room/ExecutionPanel";
 import useInterviewSocket from "../../hooks/useInterviewSocket";
 import useWebRTC from "../../hooks/useWebRTC";
 
+const EMPTY_PROBLEMS = [];
+
 function InterviewRoom() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -58,15 +60,14 @@ function InterviewRoom() {
 
   useEffect(() => {
     if (
-      interview &&
-      interview.status === "active" &&
-      currentUser?.role !== "candidate"
-    ) {
+    interview?.status === "active" &&
+    currentUser?.role !== "candidate"
+  )  {
       replayService
         .startReplay(id, { initialCode: "", initialLanguage: "javascript" })
         .catch(() => {});
     }
-  }, [interview, id, currentUser]);
+  }, [interview?.status, id, currentUser?.role]);
 
   const {
     socket,
@@ -100,7 +101,7 @@ function InterviewRoom() {
     interviewId: id,
   });
 
-  const handleRunCode = async ({ code, language, problemId }) => {
+  const handleRunCode = useCallback( async ({ code, language, problemId }) => {
     try {
       setExecutionLoading(true);
       setExecutionError("");
@@ -129,9 +130,9 @@ function InterviewRoom() {
     } finally {
       setExecutionLoading(false);
     }
-  };
+  },[]);
 
-  const handleSubmitCode = async ({ code, language, problemId }) => {
+  const handleSubmitCode =useCallback( async ({ code, language, problemId }) => {
     try {
       setExecutionLoading(true);
       setExecutionError("");
@@ -161,12 +162,12 @@ function InterviewRoom() {
     } finally {
       setExecutionLoading(false);
     }
-  };
+  },[id]);
 
-  const handleLeaveCall = () => {
+  const handleLeaveCall = useCallback(() => {
     leaveCall();
     navigate(`/interviews/${id}`);
-  };
+  },[leaveCall,navigate,id]);
 
   if (loading) {
     return (
@@ -196,6 +197,8 @@ function InterviewRoom() {
       </div>
     );
   }
+
+  const interviewProblems = interview?.problems ?? EMPTY_PROBLEMS;
 
   return (
     <main className="min-h-screen bg-[#0d0d14] text-white">
@@ -260,7 +263,7 @@ function InterviewRoom() {
             joined={joined}
             currentUser={currentUser}
             interviewId={id}
-            problems={interview?.problems || []}
+            problems={interviewProblems}
           />
 
           <ExecutionPanel
