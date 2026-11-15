@@ -24,14 +24,6 @@ dist-ssr
 *.sw?
 
 # Tests & test results
-tests/
-test/
-src/test/
-**/__tests__/
 test-results/
 playwright-report/
 coverage/
-*.test.js
-*.test.jsx
-*.spec.js
-*.spec.jsx

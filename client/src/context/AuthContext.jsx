@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { AuthContext } from "./authContextDef";
 import authService from "../services/authService";
@@ -6,6 +5,18 @@ import authService from "../services/authService";
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      setUser(null);
+    };
+
+    window.addEventListener("auth:logout", handleUnauthorized);
+
+    return () => {
+      window.removeEventListener("auth:logout", handleUnauthorized);
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -26,8 +37,10 @@ export function AuthProvider({ children }) {
         if (isMounted) {
           setUser(response?.user || response?.data || null);
         }
-      } catch {
-        localStorage.removeItem("token");
+      } catch (error) {
+        if (error.response?.status === 401) {
+          localStorage.removeItem("token");
+        }
 
         if (isMounted) {
           setUser(null);
@@ -78,12 +91,7 @@ export function AuthProvider({ children }) {
     logout,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export default AuthProvider;
-
