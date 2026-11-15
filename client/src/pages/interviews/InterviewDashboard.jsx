@@ -1,11 +1,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CalendarPlus, RefreshCw } from "lucide-react";
+import { ArrowLeft, CalendarPlus, RefreshCw } from "lucide-react";
 
 import interviewService from "../../services/interviewService";
 import { useAuth } from "../../hooks/useAuth";
 
+import AppLayout from "../../components/layout/AppLayout";
 import InterviewCard from "../../components/interviews/InterviewCard";
 import InterviewEmptyState from "../../components/interviews/InterviewEmptyState";
 import InterviewStats from "../../components/interviews/InterviewStats";
