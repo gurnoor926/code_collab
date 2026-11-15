@@ -1,4 +1,3 @@
-
 const mongoose = require("mongoose");
 const InterviewSession = require("../models/InterviewSession");
 
@@ -68,11 +67,7 @@ const getExistingPeers = (peers, currentSocketId) => {
 const registerWebRTCHandlers = (io, socket) => {
   socket.on("webrtc:join", async (payload = {}, ack) => {
     try {
-      const {
-        interviewId,
-        cameraEnabled = true,
-        micEnabled = true,
-      } = payload;
+      const { interviewId, cameraEnabled = true, micEnabled = true } = payload;
 
       if (!isValidInterviewId(interviewId)) {
         return emitError(socket, "Invalid interview ID", ack);
@@ -106,11 +101,7 @@ const registerWebRTCHandlers = (io, socket) => {
           return socket.emit("webrtc:joined", response);
         }
 
-        return emitError(
-          socket,
-          "Leave the current WebRTC room first",
-          ack,
-        );
+        return emitError(socket, "Leave the current WebRTC room first", ack);
       }
 
       const interview = await InterviewSession.findById(interviewId)
@@ -130,11 +121,7 @@ const registerWebRTCHandlers = (io, socket) => {
       }
 
       if (!["waiting", "active"].includes(interview.status)) {
-        return emitError(
-          socket,
-          "This interview is not open for WebRTC",
-          ack,
-        );
+        return emitError(socket, "This interview is not open for WebRTC", ack);
       }
 
       const userId = String(socket.user.userId);
@@ -187,12 +174,27 @@ const registerWebRTCHandlers = (io, socket) => {
 
       await socket.join(roomName);
 
+      // Reserve the participant slot before awaiting socket.join().
+      // This prevents concurrent joins from exceeding the room limit.
       if (!roomPeers.has(interviewId)) {
         roomPeers.set(interviewId, peers);
       }
 
       peers.set(socket.id, peer);
       socketRooms.set(socket.id, interviewId);
+
+      try {
+        await socket.join(roomName);
+      } catch (joinError) {
+        socketRooms.delete(socket.id);
+        peers.delete(socket.id);
+
+        if (peers.size === 0) {
+          roomPeers.delete(interviewId);
+        }
+
+        throw joinError;
+      }
 
       const response = {
         success: true,
@@ -359,26 +361,19 @@ const registerWebRTCHandlers = (io, socket) => {
     ack?.({ success: true });
   });
 
- socket.on("webrtc:leave", (ack) => {
-  leaveWebRTCRoom(socket);
+  socket.on("webrtc:leave", (ack) => {
+    leaveWebRTCRoom(socket);
 
-  if (typeof ack === "function") {
-    ack({ success: true });
-  }
-});
+    if (typeof ack === "function") {
+      ack({ success: true });
+    }
+  });
   socket.on("disconnecting", () => {
     leaveWebRTCRoom(socket);
   });
 };
 
-const relayToPeer = ({
-  io,
-  socket,
-  payload,
-  eventName,
-  validate,
-  ack,
-}) => {
+const relayToPeer = ({ io, socket, payload, eventName, validate, ack }) => {
   const respond = (success, message) => {
     if (typeof ack === "function") {
       ack({ success, message });
@@ -403,11 +398,7 @@ const relayToPeer = ({
 
   const peers = roomPeers.get(interviewId);
 
-  if (
-    !peers ||
-    !peers.has(socket.id) ||
-    !peers.has(peerId)
-  ) {
+  if (!peers || !peers.has(socket.id) || !peers.has(peerId)) {
     return respond(false, "Target peer is not in your interview room");
   }
 
