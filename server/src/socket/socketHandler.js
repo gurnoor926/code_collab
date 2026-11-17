@@ -133,27 +133,57 @@ const initializeSocket = (io) => {
 
         const roomName = getRoomName(interviewId);
 
-        //avoid duplicate joins from the same socket
+        // Avoid duplicate joins from the exact same socket, but always return
+        // the current participants list so the client state stays synchronized.
         if (socket.rooms.has(roomName)) {
+          const currentSockets = await io.in(roomName).fetchSockets();
+          const currentParticipants = [
+            ...new Map(
+              currentSockets
+                .filter(
+                  (roomSocket) =>
+                    String(roomSocket.data.userId) !== String(userId),
+                )
+                .filter((roomSocket) => roomSocket.data.user)
+                .map((roomSocket) => [
+                  String(roomSocket.data.userId),
+                  roomSocket.data.user,
+                ]),
+            ).values(),
+          ];
+
           if (typeof ack === "function") {
             return ack({
               success: true,
               message: "Already joined interview",
               interviewId,
               status: interview.status,
+              participants: currentParticipants,
             });
           }
 
           return;
         }
-        // Check whether this user already has another socket in this room.
-        // This prevents duplicate notifications from React Strict Mode
-        // and multiple connections belonging to the same user.
+
         const roomSockets = await io.in(roomName).fetchSockets();
 
-        const userAlreadyInRoom = roomSockets.some(
-          (roomSocket) => String(roomSocket.data.userId) === String(userId),
+        // Evict any stale/previous sockets belonging to this same user from the room.
+        // This ensures ghost sockets from broken connections don't linger or fire false user-left events.
+        const staleSockets = roomSockets.filter(
+          (roomSocket) =>
+            roomSocket.id !== socket.id &&
+            String(roomSocket.data.userId) === String(userId),
         );
+
+        for (const staleSocket of staleSockets) {
+          try {
+            staleSocket.leave(roomName);
+          } catch (e) {
+            // ignore
+          }
+        }
+
+        const wasAlreadyInRoom = staleSockets.length > 0;
 
         // Build an initial participant snapshot for the joining client.
         const existingParticipants = [
@@ -173,16 +203,17 @@ const initializeSocket = (io) => {
 
         await socket.join(roomName);
 
-        if (!userAlreadyInRoom) {
-          // Notify existing interview participants about the new arrival.
-          socket.to(roomName).emit("presence:user-joined", {
-            user: {
-              userId: socket.user.userId,
-              name: socket.user.name,
-              email: socket.user.email,
-              role: socket.user.role,
-            },
-          });
+        // Always notify the room of this user's presence so peer clients stay up-to-date.
+        socket.to(roomName).emit("presence:user-joined", {
+          user: {
+            userId: socket.user.userId,
+            name: socket.user.name,
+            email: socket.user.email,
+            role: socket.user.role,
+          },
+        });
+
+        if (!wasAlreadyInRoom) {
 
           // Determine the notification recipient.
           let recipientId = null;

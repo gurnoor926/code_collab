@@ -234,7 +234,16 @@ function useWebRTC({ socket, joined, interviewId }) {
   const createPeerConnection = useCallback(
     (peerId) => {
       if (peerConnectionRef.current) {
-        return peerConnectionRef.current;
+        if (
+          remotePeerIdRef.current === peerId &&
+          peerConnectionRef.current.connectionState !== "closed" &&
+          peerConnectionRef.current.connectionState !== "failed" &&
+          peerConnectionRef.current.signalingState !== "closed"
+        ) {
+          return peerConnectionRef.current;
+        }
+
+        closePeerConnection();
       }
 
       const peerConnection = new RTCPeerConnection(ICE_SERVERS);
@@ -575,6 +584,10 @@ function useWebRTC({ socket, joined, interviewId }) {
     const handlePeerJoined = (data = {}) => {
       if (!data.peerId) {
         return;
+      }
+
+      if (remotePeerIdRef.current && remotePeerIdRef.current !== data.peerId) {
+        closePeerConnection();
       }
 
       remotePeerIdRef.current = data.peerId;

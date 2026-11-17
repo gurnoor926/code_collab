@@ -195,21 +195,46 @@ const registerWebRTCHandlers = (io, socket) => {
       }
 
       const peers = roomPeers.get(interviewId) || new Map();
+      const roomName = getRoomName(interviewId);
 
-      // Prevent one user from occupying both participant slots.
-      const alreadyConnected = Array.from(peers.values()).some(
+      // If this user already has an existing connection in the room (e.g. from
+      // a previous socket before connection was lost and restored, or a refreshed tab),
+      // clean up and replace the stale connection.
+      const existingUserPeer = Array.from(peers.values()).find(
         (peer) => peer.userId === userId,
       );
 
-      if (alreadyConnected) {
-        return emitError(
-          socket,
-          "This user already has a connection in the interview call",
-          ack,
-        );
+      if (existingUserPeer) {
+        const oldSocketId = existingUserPeer.socketId;
+
+        peers.delete(oldSocketId);
+        socketRooms.delete(oldSocketId);
+
+        const oldSocket = io.sockets.sockets.get(oldSocketId);
+        if (oldSocket) {
+          try {
+            oldSocket.leave(roomName);
+            emitError(
+              oldSocket,
+              "Your connection was replaced by a newer session",
+            );
+          } catch (e) {
+            // ignore
+          }
+        }
+
+        // Notify the remaining peer that the old socket disconnected
+        socket.to(roomName).emit("webrtc:peer-left", {
+          peerId: oldSocketId,
+        });
       }
 
-      if (peers.size >= MAX_PEERS_PER_ROOM) {
+      // Check if the call already has maximum allowed other participants
+      const otherPeers = Array.from(peers.values()).filter(
+        (peer) => peer.userId !== userId,
+      );
+
+      if (otherPeers.length >= MAX_PEERS_PER_ROOM) {
         return emitError(
           socket,
           "The interview call already has two participants",
@@ -217,7 +242,6 @@ const registerWebRTCHandlers = (io, socket) => {
         );
       }
 
-      const roomName = getRoomName(interviewId);
       const existingPeers = getExistingPeers(peers, socket.id);
 
       const peer = {

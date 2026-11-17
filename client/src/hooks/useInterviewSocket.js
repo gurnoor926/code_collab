@@ -46,7 +46,7 @@ function useInterviewSocket({ interviewId, currentUser }) {
 
             participantIdsRef.current = new Set(
               initialParticipants.map((participant) =>
-                String(participant.userId),
+                String(participant.userId || participant._id || participant.id),
               ),
             );
 
@@ -183,35 +183,44 @@ function useInterviewSocket({ interviewId, currentUser }) {
       };
 
       const handlePresenceJoined = ({ user } = {}) => {
-        if (!active || !user?.userId) return;
+        if (!active || !user) return;
 
-        const participantId = String(user.userId);
+        const participantId = String(user.userId || user._id || user.id || "");
 
-        if (participantId === String(userId)) return;
-        if (participantIdsRef.current.has(participantId)) return;
+        if (!participantId || participantId === String(userId)) return;
 
+        const isNewParticipant = !participantIdsRef.current.has(participantId);
         participantIdsRef.current.add(participantId);
 
-        setParticipants((previous) => [...previous, user]);
+        setParticipants((previous) => {
+          const filtered = previous.filter(
+            (p) => String(p.userId || p._id || p.id) !== participantId,
+          );
+          return [...filtered, user];
+        });
 
-        toast.success(
-          `${user.name || "Participant"} joined the interview`,
-        );
+        if (isNewParticipant) {
+          toast.success(
+            `${user.name || "Participant"} joined the interview`,
+          );
+        }
       };
 
       const handlePresenceLeft = (data = {}) => {
         const user = data.user || data;
 
-        if (!active || !user?.userId) return;
+        if (!active || !user) return;
 
-        const participantId = String(user.userId);
+        const participantId = String(user.userId || user._id || user.id || "");
+
+        if (!participantId) return;
 
         participantIdsRef.current.delete(participantId);
 
         setParticipants((previous) =>
           previous.filter(
             (participant) =>
-              String(participant.userId) !== participantId,
+              String(participant.userId || participant._id || participant.id) !== participantId,
           ),
         );
       };
