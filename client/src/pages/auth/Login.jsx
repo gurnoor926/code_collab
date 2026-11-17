@@ -95,6 +95,13 @@ function Login() {
             >
               Password
             </label>
+
+            <Link
+              to="/forgot-password"
+              className="text-xs text-indigo-400 transition hover:text-indigo-300"
+            >
+              Forgot password?
+            </Link>
           </div>
 
           <PasswordField

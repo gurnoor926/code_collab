@@ -9,6 +9,8 @@ import ErrorBoundary from "./components/ErrorBoundary";
 // Authentication pages
 const Login = lazy(() => import("./pages/auth/Login"));
 const Register = lazy(() => import("./pages/auth/Register"));
+const ForgotPassword = lazy(() => import("./pages/auth/ForgotPassword"));
+const ResetPassword = lazy(() => import("./pages/auth/ResetPassword"));
 
 // Dashboard pages
 const Dashboard = lazy(() => import("./pages/dashboard/Dashboard"));
@@ -83,6 +85,8 @@ function App() {
         <Route element={<GuestRoute />}>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password/:token" element={<ResetPassword />} />
         </Route>
 
         {/* Authenticated routes */}

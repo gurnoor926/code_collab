@@ -21,11 +21,21 @@ const allowedOrigins = (
     .map((origin) => origin.trim())
     .filter(Boolean);
 
-const io = new Server(httpServer,{
-    cors:{
-        origin: allowedOrigins,
-    methods: ["GET", "POST"],
-    credentials: true
+const io = new Server(httpServer, {
+    cors: {
+        origin: (origin, callback) => {
+            if (!origin || allowedOrigins.includes(origin)) {
+                return callback(null, true);
+            }
+            if (process.env.NODE_ENV !== "production") {
+                if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+                    return callback(null, true);
+                }
+            }
+            return callback(new Error("Not allowed by CORS"), false);
+        },
+        methods: ["GET", "POST"],
+        credentials: true
     },
 
     maxHttpBufferSize: 100_000,

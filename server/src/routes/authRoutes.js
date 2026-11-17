@@ -2,12 +2,19 @@ const express = require("express");
 const { 
     registerUser,
     loginUser,
-    getCurrentUser
+    getCurrentUser,
+    forgotPassword,
+    resetPassword
  } = require("../controllers/authController");
 
  const protect = require("../middleware/authMiddleware");
  const validate= require("../middleware/validateMiddleware");
- const { registerSchema, loginSchema } = require("../schemas/authSchema");
+ const { 
+    registerSchema, 
+    loginSchema, 
+    forgotPasswordSchema, 
+    resetPasswordSchema 
+ } = require("../schemas/authSchema");
  const uploadAvatar = require("../middleware/uploadMiddleware");
 
 const {authLimiter} = require("../middleware/rateLimitMiddleware");
@@ -25,5 +32,7 @@ router.post("/register", authLimiter, uploadAvatar
 router.post("/login", authLimiter, validate(loginSchema), loginUser);
 router.get("/me",protect, getCurrentUser);
 
+router.post("/forgot-password", authLimiter, validate(forgotPasswordSchema), forgotPassword);
+router.post("/reset-password/:token", authLimiter, validate(resetPasswordSchema), resetPassword);
 
 module.exports = router;

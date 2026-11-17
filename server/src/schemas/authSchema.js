@@ -31,7 +31,23 @@ const loginSchema = z.object({
                 .max(72, {message: "Password is to long"}),
 });
 
+const forgotPasswordSchema = z.object({
+    email: z
+        .string()
+        .email({ message: "Invalid email address" })
+        .trim(),
+});
+
+const resetPasswordSchema = z.object({
+    password: z
+        .string()
+        .min(6, { message: "Password must be at least 6 characters long" })
+        .max(72, { message: "Password must be at most 72 characters long" }),
+});
+
 module.exports = {
     registerSchema,
-    loginSchema
+    loginSchema,
+    forgotPasswordSchema,
+    resetPasswordSchema
 };

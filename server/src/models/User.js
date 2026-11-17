@@ -31,6 +31,18 @@ const userSchema = new mongoose.Schema(
         avatar: {
             type: String,
             default:null
+        },
+
+        resetPasswordToken: {
+            type: String,
+            default: null,
+            select: false
+        },
+
+        resetPasswordExpires: {
+            type: Date,
+            default: null,
+            select: false
         }
     },
     {

@@ -1,7 +1,9 @@
+const crypto = require("crypto");
 const User = require("../models/User");
 const tokenGenerator = require("../utils/generateToken");
 const cloudinary = require("../config/cloudinary");
 const { Readable } = require("stream");
+const { sendResetPasswordEmail } = require("../utils/sendEmail");
 
 const isPasswordWithinBcryptLimit = (password) => {
   return Buffer.byteLength(password, "utf8") <= 72;
@@ -252,8 +254,151 @@ const getCurrentUser = async (req, res) => {
   }
 };
 
+// Forgot password
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email || typeof email !== "string" || !email.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid email address.",
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail });
+
+    // Anti-enumeration: Return success even if email does not exist
+    if (!user) {
+      return res.status(200).json({
+        success: true,
+        message:
+          "If an account with that email exists, we have sent a password reset link.",
+      });
+    }
+
+    // Generate secure random token
+    const rawToken = crypto.randomBytes(32).toString("hex");
+
+    // Hash token for database storage
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(rawToken)
+      .digest("hex");
+
+    // 15-minute expiration
+    user.resetPasswordToken = hashedToken;
+    user.resetPasswordExpires = Date.now() + 15 * 60 * 1000;
+    await user.save();
+
+    // Use request origin if present, otherwise fallback to the primary configured client URL
+    const requestOrigin = req.get("origin");
+    const primaryClientUrl = (process.env.CLIENT_URL || "http://localhost:5173")
+      .split(",")[0]
+      .trim();
+
+    const clientUrl = requestOrigin || primaryClientUrl;
+    const resetUrl = `${clientUrl}/reset-password/${rawToken}`;
+
+    try {
+      await sendResetPasswordEmail({
+        to: user.email,
+        resetUrl,
+        name: user.name,
+      });
+    } catch (emailError) {
+      console.error("Email dispatch failed:", emailError.response?.data || emailError.message);
+
+      // Revert token state on dispatch failure
+      user.resetPasswordToken = null;
+      user.resetPasswordExpires = null;
+      await user.save();
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to send reset email. Please try again later.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "If an account with that email exists, we have sent a password reset link.",
+    });
+  } catch (error) {
+    console.error("Forgot password error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+// Reset password
+const resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    if (!token || typeof token !== "string") {
+      return res.status(400).json({
+        success: false,
+        message: "Reset token is required.",
+      });
+    }
+
+    if (
+      !password ||
+      typeof password !== "string" ||
+      password.length < 6 ||
+      !isPasswordWithinBcryptLimit(password)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must contain 6–72 characters.",
+      });
+    }
+
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
+
+    const user = await User.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpires: { $gt: Date.now() },
+    }).select("+resetPasswordToken +resetPasswordExpires");
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "Password reset link is invalid or has expired.",
+      });
+    }
+
+    await user.setPassword(password);
+    user.resetPasswordToken = null;
+    user.resetPasswordExpires = null;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Password has been reset successfully. You can now log in.",
+    });
+  } catch (error) {
+    console.error("Reset password error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
   getCurrentUser,
+  forgotPassword,
+  resetPassword,
 };

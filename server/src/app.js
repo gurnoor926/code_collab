@@ -36,11 +36,20 @@ const allowedOrigins = (process.env.CLIENT_URL || "http://localhost:5173")
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests without an Origin header, such as Postman.
+      // Allow requests without an Origin header, such as Postman or mobile apps.
       if (!origin || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
+      // In development, automatically allow all localhost and 127.0.0.1 origins (e.g., Vite on 5173, 5174, etc.)
+      if (process.env.NODE_ENV !== "production") {
+        const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+        if (isLocalhost) {
+          return callback(null, true);
+        }
+      }
+
+      console.warn(`[CORS] Blocked request from origin: ${origin}. Allowed origins: ${allowedOrigins.join(", ")}`);
       const error = new Error("Not allowed by CORS");
       error.statusCode = 403;
       return callback(error);
