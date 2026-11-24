@@ -14,23 +14,32 @@ import {
   Users,
   Bell,
   ShieldCheck,
+  Loader2,
 } from "lucide-react";
 
 import { useAuth } from "../../hooks/useAuth";
+import { useLoading } from "../../context/LoadingContext";
 import UserAvatar from "../common/UserAvatar";
 import toast from "react-hot-toast";
 
 function Navbar() {
   const { user, logout } = useAuth();
+  const { isLoading, navLoading } = useLoading();
   const navigate = useNavigate();
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  const handleLogout = () => {
-    logout();
-    toast.success("Logged out successfully");
-    navigate("/login");
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await logout();
+      toast.success("Logged out successfully");
+      navigate("/login");
+    } finally {
+      setIsLoggingOut(false);
+    }
   };
 
   const closeMenus = () => {
@@ -116,6 +125,18 @@ function Navbar() {
         {/* Right Actions */}
         <div className="flex items-center gap-3">
 
+          {/* Real-time API & Navigation Activity Indicator */}
+          {isLoading && (
+            <div
+              className="hidden sm:inline-flex items-center gap-2 rounded-full border border-indigo-500/20 bg-indigo-500/10 px-3 py-1 text-xs font-medium text-indigo-300 animate-fade-in"
+              role="status"
+              aria-live="polite"
+            >
+              <Loader2 size={13} className="animate-spin text-indigo-400 shrink-0" />
+              <span>{navLoading ? "Navigating..." : "Connecting..."}</span>
+            </div>
+          )}
+
           {/* Notifications */}
          <NotificationBell />
 
@@ -196,11 +217,16 @@ function Navbar() {
 
                   <button
                     type="button"
+                    disabled={isLoggingOut}
                     onClick={handleLogout}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-red-400 transition hover:bg-red-500/10"
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-red-400 transition hover:bg-red-500/10 disabled:opacity-50"
                   >
-                    <LogOut size={17} />
-                    Logout
+                    {isLoggingOut ? (
+                      <Loader2 size={17} className="animate-spin text-red-400" />
+                    ) : (
+                      <LogOut size={17} />
+                    )}
+                    {isLoggingOut ? "Logging out..." : "Logout"}
                   </button>
                 </div>
               </div>
@@ -219,6 +245,13 @@ function Navbar() {
           </button>
         </div>
       </div>
+
+      {/* Header Accent Activity Line */}
+      {isLoading && (
+        <div className="absolute bottom-0 left-0 right-0 h-[1.5px] overflow-hidden">
+          <div className="h-full w-full bg-gradient-to-r from-transparent via-indigo-500 to-transparent animate-shimmer" />
+        </div>
+      )}
 
       {/* Mobile Navigation */}
       {mobileOpen && (

@@ -197,6 +197,8 @@ function CollaborativeEditor({
 
   const [problemDetails, setProblemDetails] = useState(null);
   const [problemLoading, setProblemLoading] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const userId = String(
     currentUser?._id || currentUser?.id || ""
@@ -664,24 +666,29 @@ function CollaborativeEditor({
   // Run code.
   // --------------------------------------------------
 
-  const handleRun = useCallback(() => {
+  const handleRun = useCallback(async () => {
     if (!selectedProblemId) {
       toast.error("No interview problem selected.");
       return;
     }
 
-    onRun?.({
-      code,
-      language,
-      problemId: selectedProblemId,
-    });
+    setRunning(true);
+    try {
+      await onRun?.({
+        code,
+        language,
+        problemId: selectedProblemId,
+      });
+    } finally {
+      setTimeout(() => setRunning(false), 600);
+    }
   }, [code, language, selectedProblemId, onRun]);
 
   // --------------------------------------------------
   // Submit solution.
   // --------------------------------------------------
 
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = useCallback(async () => {
     if (!selectedProblemId) {
       toast.error("No interview problem selected.");
       return;
@@ -692,11 +699,16 @@ function CollaborativeEditor({
       return;
     }
 
-    onSubmit?.({
-      code,
-      language,
-      problemId: selectedProblemId,
-    });
+    setSubmitting(true);
+    try {
+      await onSubmit?.({
+        code,
+        language,
+        problemId: selectedProblemId,
+      });
+    } finally {
+      setTimeout(() => setSubmitting(false), 600);
+    }
   }, [code, language, selectedProblemId, joined, onSubmit]);
 
   // --------------------------------------------------
@@ -880,11 +892,15 @@ function CollaborativeEditor({
           <button
             type="button"
             onClick={handleRun}
-            disabled={!selectedProblemId || problemLoading}
+            disabled={!selectedProblemId || problemLoading || running || submitting}
             className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Play size={15} fill="currentColor" />
-            Run Code
+            {running ? (
+              <LoaderCircle size={15} className="animate-spin" />
+            ) : (
+              <Play size={15} fill="currentColor" />
+            )}
+            {running ? "Running..." : "Run Code"}
           </button>
 
           <button
@@ -893,11 +909,14 @@ function CollaborativeEditor({
             disabled={
               !selectedProblemId ||
               !joined ||
-              problemLoading
+              problemLoading ||
+              running ||
+              submitting
             }
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Submit Solution
+            {submitting && <LoaderCircle size={15} className="animate-spin" />}
+            {submitting ? "Submitting..." : "Submit Solution"}
           </button>
 
         </div>

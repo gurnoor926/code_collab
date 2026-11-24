@@ -13,6 +13,40 @@ const api = axios.create({
 });
 
 let logoutDispatched = false;
+let activeRequestsCount = 0;
+const loadingListeners = new Set();
+
+const notifyLoadingListeners = () => {
+  const isLoading = activeRequestsCount > 0;
+  loadingListeners.forEach((listener) => {
+    try {
+      listener(isLoading, activeRequestsCount);
+    } catch (e) {
+      console.error("API loading listener error:", e);
+    }
+  });
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("api:loading", {
+        detail: { isLoading, activeCount: activeRequestsCount },
+      })
+    );
+  }
+};
+
+export const subscribeToApiLoading = (listener) => {
+  loadingListeners.add(listener);
+  listener(activeRequestsCount > 0, activeRequestsCount);
+  return () => {
+    loadingListeners.delete(listener);
+  };
+};
+
+export const getApiLoadingState = () => ({
+  isLoading: activeRequestsCount > 0,
+  activeCount: activeRequestsCount,
+});
 
 // Reset logout state after successful authentication.
 export const resetApiLogoutState = () => {
@@ -22,6 +56,9 @@ export const resetApiLogoutState = () => {
 // Request interceptor
 api.interceptors.request.use(
   (config) => {
+    activeRequestsCount++;
+    notifyLoadingListeners();
+
     const token = localStorage.getItem("token");
 
     if (token) {
@@ -44,14 +81,25 @@ api.interceptors.request.use(
 
     return config;
   },
-  (error) => Promise.reject(error),
+  (error) => {
+    activeRequestsCount = Math.max(0, activeRequestsCount - 1);
+    notifyLoadingListeners();
+    return Promise.reject(error);
+  },
 );
 
 // Response interceptor
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    activeRequestsCount = Math.max(0, activeRequestsCount - 1);
+    notifyLoadingListeners();
+    return response;
+  },
 
   (error) => {
+    activeRequestsCount = Math.max(0, activeRequestsCount - 1);
+    notifyLoadingListeners();
+
     const status = error.response?.status;
     const requestUrl = error.config?.url || "";
 

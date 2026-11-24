@@ -35,6 +35,7 @@ function InterviewAdministration() {
   const [subModalOpen, setSubModalOpen] = useState(false);
   const [selectedInterview, setSelectedInterview] = useState(null);
   const [interviewSubs, setInterviewSubs] = useState([]);
+  const [cancellingId, setCancellingId] = useState(null);
 
   const fetchInterviews = useCallback(async () => {
     try {
@@ -82,6 +83,7 @@ function InterviewAdministration() {
     if (!window.confirm("Are you sure you want to cancel this interview?")) {
       return;
     }
+    setCancellingId(id);
     try {
       await interviewService.cancelInterview(id);
       toast.success("Interview cancelled.");
@@ -90,6 +92,8 @@ function InterviewAdministration() {
       toast.error(
         error.response?.data?.message || "Failed to cancel interview."
       );
+    } finally {
+      setCancellingId(null);
     }
   };
 
@@ -276,11 +280,16 @@ function InterviewAdministration() {
                           {["scheduled", "waiting"].includes(item.status) && (
                             <button
                               type="button"
+                              disabled={cancellingId === item._id}
                               onClick={() => handleCancelInterview(item._id)}
-                              className="rounded-lg p-1.5 text-zinc-500 hover:bg-red-500/10 hover:text-red-400 transition"
+                              className="rounded-lg p-1.5 text-zinc-500 hover:bg-red-500/10 hover:text-red-400 transition disabled:opacity-50"
                               title="Cancel interview"
                             >
-                              <XCircle size={15} />
+                              {cancellingId === item._id ? (
+                                <LoaderCircle size={15} className="animate-spin text-red-400" />
+                              ) : (
+                                <XCircle size={15} />
+                              )}
                             </button>
                           )}
                         </div>

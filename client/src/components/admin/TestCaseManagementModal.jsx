@@ -15,6 +15,7 @@ function TestCaseManagementModal({ isOpen, onClose, problem }) {
   const [testCases, setTestCases] = useState([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [actionId, setActionId] = useState(null);
 
   // New or Edit test case form state
   const [editingId, setEditingId] = useState(null);
@@ -114,16 +115,20 @@ function TestCaseManagementModal({ isOpen, onClose, problem }) {
     if (!window.confirm("Are you sure you want to delete this test case?")) {
       return;
     }
+    setActionId(`delete-${id}`);
     try {
       await adminService.deleteTestCase(id);
       toast.success("Test case deleted!");
       fetchTestCases();
     } catch {
       toast.error("Failed to delete test case.");
+    } finally {
+      setActionId(null);
     }
   };
 
   const handleToggleHidden = async (tc) => {
+    setActionId(`hidden-${tc._id}`);
     try {
       await adminService.updateTestCase(tc._id, {
         isHidden: !tc.isHidden,
@@ -134,10 +139,13 @@ function TestCaseManagementModal({ isOpen, onClose, problem }) {
       );
     } catch {
       toast.error("Failed to update test case.");
+    } finally {
+      setActionId(null);
     }
   };
 
   const handleToggleActive = async (tc) => {
+    setActionId(`active-${tc._id}`);
     try {
       await adminService.updateTestCase(tc._id, {
         isActive: !tc.isActive,
@@ -148,6 +156,8 @@ function TestCaseManagementModal({ isOpen, onClose, problem }) {
       );
     } catch {
       toast.error("Failed to update test case.");
+    } finally {
+      setActionId(null);
     }
   };
 
@@ -334,6 +344,7 @@ function TestCaseManagementModal({ isOpen, onClose, problem }) {
 
                         <button
                           type="button"
+                          disabled={actionId === `hidden-${tc._id}`}
                           onClick={() => handleToggleHidden(tc)}
                           className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold border transition ${
                             tc.isHidden
@@ -342,27 +353,30 @@ function TestCaseManagementModal({ isOpen, onClose, problem }) {
                           }`}
                           title="Click to toggle Public / Hidden"
                         >
-                          {tc.isHidden ? (
-                            <>
-                              <EyeOff size={12} /> Hidden
-                            </>
+                          {actionId === `hidden-${tc._id}` ? (
+                            <LoaderCircle size={12} className="animate-spin" />
+                          ) : tc.isHidden ? (
+                            <EyeOff size={12} />
                           ) : (
-                            <>
-                              <Eye size={12} /> Public
-                            </>
+                            <Eye size={12} />
                           )}
+                          {tc.isHidden ? "Hidden" : "Public"}
                         </button>
 
                         <button
                           type="button"
+                          disabled={actionId === `active-${tc._id}`}
                           onClick={() => handleToggleActive(tc)}
-                          className={`rounded-md px-2 py-0.5 text-[11px] font-semibold border transition ${
+                          className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold border transition ${
                             tc.isActive
                               ? "bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20"
                               : "bg-zinc-500/10 text-zinc-400 border-zinc-500/20 hover:bg-zinc-500/20"
                           }`}
                           title="Click to toggle Active / Inactive"
                         >
+                          {actionId === `active-${tc._id}` && (
+                            <LoaderCircle size={11} className="animate-spin" />
+                          )}
                           {tc.isActive ? "Active" : "Inactive"}
                         </button>
 
@@ -381,10 +395,16 @@ function TestCaseManagementModal({ isOpen, onClose, problem }) {
                         </button>
                         <button
                           type="button"
+                          disabled={actionId === `delete-${tc._id}`}
                           onClick={() => handleDeleteTestCase(tc._id)}
-                          className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs text-red-400 hover:bg-red-500/10"
+                          className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
                         >
-                          <Trash2 size={13} /> Delete
+                          {actionId === `delete-${tc._id}` ? (
+                            <LoaderCircle size={13} className="animate-spin text-red-400" />
+                          ) : (
+                            <Trash2 size={13} />
+                          )}
+                          Delete
                         </button>
                       </div>
                     </div>

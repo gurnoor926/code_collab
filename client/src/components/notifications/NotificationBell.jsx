@@ -65,6 +65,7 @@ function NotificationBell() {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [actionId, setActionId] = useState(null);
 
   const fetchUnreadCount = useCallback(async () => {
     try {
@@ -165,6 +166,7 @@ useEffect(() => {
   const handleMarkRead = async (notification) => {
     if (notification.isRead) return;
 
+    setActionId(`read-${notification._id}`);
     try {
       await notificationService.markAsRead(notification._id);
 
@@ -181,10 +183,13 @@ useEffect(() => {
       toast.error(
         error.response?.data?.message || "Unable to mark as read"
       );
+    } finally {
+      setActionId(null);
     }
   };
 
   const handleMarkAllRead = async () => {
+    setActionId("mark-all");
     try {
       await notificationService.markAllAsRead();
 
@@ -198,6 +203,8 @@ useEffect(() => {
       toast.error(
         error.response?.data?.message || "Unable to update notifications"
       );
+    } finally {
+      setActionId(null);
     }
   };
 
@@ -206,6 +213,7 @@ useEffect(() => {
       (item) => item._id === id
     );
 
+    setActionId(`delete-${id}`);
     try {
       await notificationService.deleteNotification(id);
 
@@ -220,6 +228,8 @@ useEffect(() => {
       toast.error(
         error.response?.data?.message || "Unable to delete notification"
       );
+    } finally {
+      setActionId(null);
     }
   };
 
@@ -268,10 +278,15 @@ useEffect(() => {
                   <button
                     type="button"
                     onClick={handleMarkAllRead}
+                    disabled={actionId === "mark-all"}
                     title="Mark all as read"
-                    className="rounded-lg p-2 text-zinc-400 hover:bg-white/5 hover:text-indigo-400"
+                    className="rounded-lg p-2 text-zinc-400 hover:bg-white/5 hover:text-indigo-400 disabled:opacity-50"
                   >
-                    <CheckCheck size={17} />
+                    {actionId === "mark-all" ? (
+                      <LoaderCircle size={17} className="animate-spin text-indigo-400" />
+                    ) : (
+                      <CheckCheck size={17} />
+                    )}
                   </button>
                 )}
 
@@ -346,20 +361,30 @@ useEffect(() => {
                                 <button
                                   type="button"
                                   title="Mark as read"
+                                  disabled={actionId === `read-${notification._id}`}
                                   onClick={() => handleMarkRead(notification)}
-                                  className="rounded-md p-1.5 text-zinc-500 hover:bg-indigo-500/10 hover:text-indigo-400"
+                                  className="rounded-md p-1.5 text-zinc-500 hover:bg-indigo-500/10 hover:text-indigo-400 disabled:opacity-50"
                                 >
-                                  <Check size={14} />
+                                  {actionId === `read-${notification._id}` ? (
+                                    <LoaderCircle size={14} className="animate-spin text-indigo-400" />
+                                  ) : (
+                                    <Check size={14} />
+                                  )}
                                 </button>
                               )}
 
                               <button
                                 type="button"
                                 title="Delete notification"
+                                disabled={actionId === `delete-${notification._id}`}
                                 onClick={() => handleDelete(notification._id)}
-                                className="rounded-md p-1.5 text-zinc-500 hover:bg-red-500/10 hover:text-red-400"
+                                className="rounded-md p-1.5 text-zinc-500 hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50"
                               >
-                                <Trash2 size={14} />
+                                {actionId === `delete-${notification._id}` ? (
+                                  <LoaderCircle size={14} className="animate-spin text-red-400" />
+                                ) : (
+                                  <Trash2 size={14} />
+                                )}
                               </button>
                             </div>
                           </div>

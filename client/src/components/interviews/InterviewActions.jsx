@@ -55,7 +55,11 @@ function InterviewActions({
             disabled={loading}
             className="inline-flex items-center gap-2 rounded-xl border border-red-500/30 px-5 py-3 text-sm font-semibold text-red-400 transition hover:bg-red-500/10 disabled:opacity-50"
           >
-            <XCircle size={17} />
+            {loading ? (
+              <LoaderCircle className="animate-spin" size={17} />
+            ) : (
+              <XCircle size={17} />
+            )}
             Cancel interview
           </button>
         )}

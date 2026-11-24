@@ -67,6 +67,7 @@ function NotificationCenter() {
   const [filterMode, setFilterMode] = useState("all"); // "all" | "unread"
   const [search, setSearch] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+  const [processingId, setProcessingId] = useState(null);
 
   const fetchUnreadCount = useCallback(async () => {
     try {
@@ -135,6 +136,7 @@ function NotificationCenter() {
   }, []);
 
   const handleMarkAsRead = async (id) => {
+    setProcessingId(`read-${id}`);
     try {
       await notificationService.markAsRead(id);
       setNotifications((prev) =>
@@ -143,6 +145,8 @@ function NotificationCenter() {
       setUnreadCount((prev) => Math.max(0, prev - 1));
     } catch {
       toast.error("Failed to mark as read.");
+    } finally {
+      setProcessingId(null);
     }
   };
 
@@ -161,6 +165,7 @@ function NotificationCenter() {
   };
 
   const handleDelete = async (id) => {
+    setProcessingId(`delete-${id}`);
     try {
       await notificationService.deleteNotification(id);
       setNotifications((prev) => {
@@ -173,6 +178,8 @@ function NotificationCenter() {
       toast.success("Notification deleted.");
     } catch {
       toast.error("Failed to delete notification.");
+    } finally {
+      setProcessingId(null);
     }
   };
 
@@ -246,8 +253,12 @@ function NotificationCenter() {
               disabled={actionLoading}
               className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
             >
-              <CheckCheck size={16} className="text-indigo-400" />
-              Mark all as read
+              {actionLoading ? (
+                <LoaderCircle size={16} className="animate-spin text-indigo-400" />
+              ) : (
+                <CheckCheck size={16} className="text-indigo-400" />
+              )}
+              {actionLoading ? "Marking all as read..." : "Mark all as read"}
             </button>
           )}
         </div>
@@ -389,21 +400,31 @@ function NotificationCenter() {
                     {isUnread && (
                       <button
                         type="button"
+                        disabled={processingId === `read-${item._id}`}
                         onClick={() => handleMarkAsRead(item._id)}
-                        className="rounded-lg p-1.5 text-zinc-400 hover:bg-white/10 hover:text-white transition"
+                        className="rounded-lg p-1.5 text-zinc-400 hover:bg-white/10 hover:text-white transition disabled:opacity-50"
                         title="Mark as read"
                       >
-                        <Check size={16} />
+                        {processingId === `read-${item._id}` ? (
+                          <LoaderCircle size={16} className="animate-spin text-indigo-400" />
+                        ) : (
+                          <Check size={16} />
+                        )}
                       </button>
                     )}
 
                     <button
                       type="button"
+                      disabled={processingId === `delete-${item._id}`}
                       onClick={() => handleDelete(item._id)}
-                      className="rounded-lg p-1.5 text-zinc-500 hover:bg-red-500/10 hover:text-red-400 transition"
+                      className="rounded-lg p-1.5 text-zinc-500 hover:bg-red-500/10 hover:text-red-400 transition disabled:opacity-50"
                       title="Delete notification"
                     >
-                      <Trash2 size={16} />
+                      {processingId === `delete-${item._id}` ? (
+                        <LoaderCircle size={16} className="animate-spin text-red-400" />
+                      ) : (
+                        <Trash2 size={16} />
+                      )}
                     </button>
                   </div>
                 </div>

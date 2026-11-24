@@ -35,6 +35,7 @@ function ProblemManagement() {
   const [selectedProblem, setSelectedProblem] = useState(null);
   const [testCaseModalOpen, setTestCaseModalOpen] = useState(false);
   const [testCaseProblem, setTestCaseProblem] = useState(null);
+  const [actionId, setActionId] = useState(null);
 
   const fetchProblems = useCallback(async () => {
     try {
@@ -91,6 +92,7 @@ function ProblemManagement() {
     if (!window.confirm("Are you sure you want to delete this problem?")) {
       return;
     }
+    setActionId(`delete-${id}`);
     try {
       await adminService.deleteProblem(id);
       toast.success("Problem deleted successfully.");
@@ -99,10 +101,13 @@ function ProblemManagement() {
       toast.error(
         error.response?.data?.message || "Failed to delete problem."
       );
+    } finally {
+      setActionId(null);
     }
   };
 
   const handleTogglePublish = async (problem) => {
+    setActionId(`publish-${problem._id}`);
     try {
       const nextStatus = !problem.isPublished;
       await adminService.updateProblem(problem._id, {
@@ -114,6 +119,8 @@ function ProblemManagement() {
       fetchProblems();
     } catch {
       toast.error("Failed to update publication status.");
+    } finally {
+      setActionId(null);
     }
   };
 
@@ -248,23 +255,23 @@ function ProblemManagement() {
                       <td className="px-4 py-3.5">
                         <button
                           type="button"
+                          disabled={actionId === `publish-${p._id}`}
                           onClick={() => handleTogglePublish(p)}
-                          className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold transition ${
+                          className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold transition disabled:opacity-50 ${
                             isPub
                               ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20"
                               : "bg-zinc-500/10 text-zinc-400 border-zinc-500/20 hover:bg-zinc-500/20"
                           }`}
                           title="Click to toggle publish"
                         >
-                          {isPub ? (
-                            <>
-                              <Eye size={11} /> Published
-                            </>
+                          {actionId === `publish-${p._id}` ? (
+                            <LoaderCircle size={11} className="animate-spin" />
+                          ) : isPub ? (
+                            <Eye size={11} />
                           ) : (
-                            <>
-                              <EyeOff size={11} /> Draft
-                            </>
+                            <EyeOff size={11} />
                           )}
+                          {isPub ? "Published" : "Draft"}
                         </button>
                       </td>
                       <td className="px-4 py-3.5">
@@ -305,11 +312,16 @@ function ProblemManagement() {
                           {/* Delete */}
                           <button
                             type="button"
+                            disabled={actionId === `delete-${p._id}`}
                             onClick={() => handleDelete(p._id)}
-                            className="rounded-lg p-1.5 text-zinc-400 transition hover:bg-red-500/10 hover:text-red-400"
+                            className="rounded-lg p-1.5 text-zinc-400 transition hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50"
                             title="Delete problem"
                           >
-                            <Trash2 size={15} />
+                            {actionId === `delete-${p._id}` ? (
+                              <LoaderCircle size={15} className="animate-spin text-red-400" />
+                            ) : (
+                              <Trash2 size={15} />
+                            )}
                           </button>
                         </div>
                       </td>

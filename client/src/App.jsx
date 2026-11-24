@@ -67,10 +67,14 @@ const Unauthorized = lazy(() => import("./pages/Unauthorized"));
 
 function PageLoader() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="flex flex-col items-center gap-3">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-600 border-t-indigo-500" />
-        <p className="text-sm text-gray-400">Loading page...</p>
+    <div className="flex min-h-screen items-center justify-center bg-[#09090b]">
+      <div className="flex flex-col items-center gap-4 animate-fade-in">
+        <div className="relative flex h-12 w-12 items-center justify-center">
+          <div className="absolute inset-0 rounded-full border-2 border-indigo-500/20" />
+          <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-indigo-500 border-r-indigo-400" />
+          <div className="h-3 w-3 rounded-full bg-indigo-500 shadow-md shadow-indigo-500/50 animate-pulse" />
+        </div>
+        <p className="text-xs font-medium tracking-wide text-zinc-400">Loading page...</p>
       </div>
     </div>
   );
